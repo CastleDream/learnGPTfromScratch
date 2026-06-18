@@ -23,4 +23,5 @@
 ## 2. 学习进度记录
 |任务|时间|
 |---|---|
-|1_micrograd_from_scratch.ipynb| 2026.6.14~|
+|1_micrograd_from_scratch.ipynb| 2026.6.14~6.18|
+||
