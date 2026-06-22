@@ -17,6 +17,9 @@
 ├── README.md
 └── code
     ├── 1_micrograd_from_scratch.ipynb
+    ├── 1_micrograd_demo.ipynb
+    ├── 
+    ├── 
     └── a_utils.py
 ```
 
