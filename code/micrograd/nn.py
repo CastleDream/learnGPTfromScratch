@@ -4,7 +4,7 @@ ref:
 https://github.com/karpathy/micrograd/blob/master/micrograd/nn.py
 以及课程视频讲解
 """
-from engine import Value
+from micrograd.engine import Value
 import random
 
 class Module:
@@ -16,7 +16,7 @@ class Module:
 
 class Neuron(Module):
     def __init__(self, nin,nonlin):
-        self.w = [Value(random.unifor(-1,1), label = 'w') for _ in range(nin)]
+        self.w = [Value(random.uniform(-1,1), label = 'w') for _ in range(nin)]
         self.b = Value(0, label = 'b')
         self.nonlin = nonlin
 
@@ -28,9 +28,12 @@ class Neuron(Module):
     def parameters(self):
         return self.w + [self.b]
     
+    def __repr__(self):
+        return f"{'ReLU' if self.nonlin else 'Linear'}Neuron({len(self.w)})"
+    
 class Layer(Module):
-    def __init__(self, nin, nout):
-        self.neurons = [Neuron(nin) for _ in range(nout)]
+    def __init__(self, nin, nout, **kwargs):
+        self.neurons = [Neuron(nin, **kwargs) for _ in range(nout)]
 
     def __call__(self,x):
         outs = [n(x) for n in self.neurons]
@@ -38,6 +41,9 @@ class Layer(Module):
     
     def parameters(self):
         return [p for neuron in self.neurons for p in neuron.parameters()]
+
+    def __repr__(self):
+        return f"Layer of [{', '.join(str(n) for n in self.neurons)}]"
     
 class MLP(Module):
     def __init__(self,nin,nouts):
@@ -52,3 +58,6 @@ class MLP(Module):
         
     def parameters(self):
         return [p for layer in self.layers for p in layer.parameters()]
+
+    def __repr__(self):
+        return f"MLP of [{', '.join(str(layer) for layer in self.layers)}]"
