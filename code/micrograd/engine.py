@@ -63,8 +63,13 @@ class Value:
     def __sub__(self,other):
         return self + (-other)
 
-    def __rsub__(self,other):
-        return self + (-other)
+    def __rsub__(self, other): # other - self
+        """
+        Value(a) - int(b)  a.__sub__(b)
+        int(a) - Value(b) 尝试 a.__sub__(b), 无，去尝试调用 b.__rsub__(a) 
+        即 int(self) - Value(other) → other.__rsub__(self)→ other -self 
+        """
+        return other + (-self)
 
     def exp(self):
         x = self.data

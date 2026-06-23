@@ -18,13 +18,14 @@
 └── code
     ├── 1_micrograd_from_scratch.ipynb
     ├── 1_micrograd_demo.ipynb
+    ├── a_utils.py
     ├── 
-    ├── 
-    └── a_utils.py
+    └── test.py
 ```
 
 ## 2. 学习进度记录
 |任务|时间|
 |---|---|
-|1_micrograd_from_scratch.ipynb| 2026.6.14~6.18|
-||
+|P1: 神经网络与反向传播详解：构建 micrograd| 2026.6.14~6.18|
+|P2: 语言建模详解：构建 makemore|2026.6.23~6.|
+|
