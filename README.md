@@ -16,8 +16,9 @@
 .
 ├── README.md
 └── code
-    ├── 1_micrograd_from_scratch.ipynb
+    ├── 1_micrograd_from_scratch.ipynb    # Min-Max/hinge loss, L2正则
     ├── 1_micrograd_demo.ipynb
+    ├── 2_build_makemore.ipynb            # 广播机制， broadcast
     ├── a_utils.py
     ├── 
     └── test.py
