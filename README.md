@@ -14,14 +14,21 @@
 ## 1. 文件结构说明
 ```bash
 .
-├── README.md
-└── code
-    ├── 1_micrograd_from_scratch.ipynb    # Min-Max/hinge loss, L2正则
-    ├── 1_micrograd_demo.ipynb
-    ├── 2_build_makemore.ipynb            # 广播机制， broadcast
-    ├── a_utils.py
-    ├── 
-    └── test.py
+├── code
+│   ├── 1_micrograd_demo.ipynb             # Min-Max/hinge loss, L2正则
+│   ├── 1_micrograd_from_scratch.ipynb     
+│   ├── 2_build_demo.ipynb                 # bigram用于中文语料的效果
+│   ├── 2_build_makemore.ipynb             # 广播机制， broadcast
+│   ├── ....
+│   ├── a_utils.py                         # 用于 1_micrograd_from_scratch.ipynb 的辅助函数
+│   ├── micrograd
+│   ├── names.txt                          # makemore用到的英文名字数据集
+│   ├── names_zh.txt                       # 自己搜集的中文名字数据
+│   ├── names_zh_list.txt                  # 处理后得到的中文名字数据集
+│   └── test.py                            # 测试 micrograd 中的代码
+└── md
+    ├── 1_神经网络与反向传播详解_micrograd.md
+    └── 2_语言建模详解_makemore.md
 ```
 
 ## 2. 学习进度记录
