@@ -20,7 +20,9 @@ Github项目： <https://github.com/karpathy/makemore>
 
 **MLP**, 
 + following `Bengio et al. 2003` [A Neural Probabilistic Language Model](https://www.jmlr.org/papers/volume3/bengio03a/bengio03a.pdf)
-
++ 这个论文虽然不是第一个提出MLP的， 也不是第一个用MLP/神经网络来预测字符序列中下一个字符/标记的论文
++ 截止 2026.6.26， 这个论文的引用数量是 13527
++ 
 
 
 + CNN, following DeepMind WaveNet 2016 (in progress...) [WAVENET: A GENERATIVE MODEL FOR RAW AUDIO](https://arxiv.org/pdf/1609.03499)
