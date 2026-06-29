@@ -3,7 +3,7 @@
   - [2. 学习进度记录](#2-学习进度记录)
 
 # learnGPTfromScratch
-
+Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-hero)
 
 ## 1. 文件结构说明
 ```bash
@@ -33,4 +33,5 @@
 |---|---|---|
 |P1: 神经网络与反向传播详解：构建 micrograd| 2026.6.14~6.18| 前向计算，反向传播，python的操作符重载，pytorch |
 |P2: 语言建模详解：构建 makemore|2026.6.23~6.25|Bag-of-words(词袋模型), n-gram, softmax, 最大似然函数|
-|P3: 构建 makemore 第二部分：多层感知机 | 2026.6.26~|词嵌入, torch.view(pytorch内部机制), 交叉熵损失函数| 
+|P3: 构建 makemore 第二部分：多层感知机 | 2026.6.26~6.29|词嵌入, torch.view(pytorch内部机制), 交叉熵损失函数;手动举例验证L1,L2正则差异| 
+|P4: 构建 makemore 第三部分：多层感知机 | 2026.6.30~|| 
