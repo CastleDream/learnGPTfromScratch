@@ -9,7 +9,9 @@ B站视频链接：
 +  [【精译⚡从零开始构建 GPT 系列】Andrej Karpathy](https://www.bilibili.com/video/BV11yHXeuE9d/?spm_id_from=333.337.search-card.all.click&vd_source=1019ffdc843339404e9df6ae52ff9e77)
 + 2026年1月9日的重制版本：[Andrej Karpathy【中英⚡从零构建 GPT（重制版）|Neural Networks: Zero to Hero】](https://www.bilibili.com/video/BV1mqrTBvEaf?buvid=XUA8C1BA16956A5648F049B542ACCF70B8D30&from_spmid=tm.recommend.0.0&is_story_h5=false&mid=Is1xlji2jfaisvby%2F4iEVQ%3D%3D&plat_id=116&share_from=ugc&share_medium=android&share_plat=android&share_session_id=d7996f03-32d2-49a0-942f-15848e8df474&share_source=COPY&share_tag=s_i&spmid=united.player-video-detail.0.0&timestamp=1767974026&unique_k=cz6kfKa&up_id=18053089&vd_source=1019ffdc843339404e9df6ae52ff9e77)
 
-Github项目： <https://github.com/karpathy/micrograd>
+Github项目： 
++ <https://github.com/karpathy/makemore>
++ [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-hero)
 
 ## 关键内容
 只记录一些重点内容，毕竟不再是初阶教程了，更直接一点

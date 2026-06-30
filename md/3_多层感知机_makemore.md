@@ -7,7 +7,9 @@
 B站视频链接：
 + [Andrej Karpathy【中英⚡从零构建 GPT（重制版）|Neural Networks: Zero to Hero】](https://www.bilibili.com/video/BV1mqrTBvEaf/?p=3&spm_id_from=333.1007.top_right_bar_window_history.content.click&vd_source=1019ffdc843339404e9df6ae52ff9e77)
 
-Github项目： <https://github.com/karpathy/makemore>
+Github项目： 
++ <https://github.com/karpathy/makemore>
++ [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-hero)
 
 ## 关键内容
 1. 上节课的内容里有Bigram进行字符预测，这里主要是输入单个字符，预测下一个字符，这种方案存在的问题：
@@ -22,7 +24,7 @@ Github项目： <https://github.com/karpathy/makemore>
 + following `Bengio et al. 2003` [A Neural Probabilistic Language Model](https://www.jmlr.org/papers/volume3/bengio03a/bengio03a.pdf)
 + 这个论文虽然不是第一个提出MLP的， 也不是第一个用MLP/神经网络来预测字符序列中下一个字符/标记的论文
 + 截止 2026.6.26， 这个论文的引用数量是 13527
-+ 
+
 
 
 + CNN, following DeepMind WaveNet 2016 (in progress...) [WAVENET: A GENERATIVE MODEL FOR RAW AUDIO](https://arxiv.org/pdf/1609.03499)
