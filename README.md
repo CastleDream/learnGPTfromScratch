@@ -14,7 +14,7 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 .
 ├── code
 │   ├── 1_micrograd_demo.ipynb             # Min-Max/hinge loss, L2正则
-│   ├── 1_micrograd_from_scratch.ipynb     # ✨
+│   ├── 1_micrograd_from_scratch.ipynb     # ✨ 手写最简单的反向梯度和模型训练框架
 │   ├── 2_build_demo.ipynb                 # bigram用于中文语料的效果
 │   ├── 2_build_makemore.ipynb             # ✨ 广播机制(broadcast)
 │   ├── 3_MLP_demo.ipynb                   # 手动举例验证L1,L2正则差异;嵌入层/查表的前向和反向过程
