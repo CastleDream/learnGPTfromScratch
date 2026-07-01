@@ -44,7 +44,7 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 |P1: 神经网络与反向传播详解：构建 micrograd| 2026.6.14~6.18| 前向计算，反向传播，python的操作符重载，pytorch |
 |P2: 语言建模详解：构建 makemore|2026.6.23~6.25|Bag-of-words(词袋模型), n-gram, softmax, 最大似然函数|
 |P3: 构建 makemore 第二部分：多层感知机 | 2026.6.26~6.29|词嵌入, torch.view(pytorch内部机制), 交叉熵损失函数; 手动举例验证L1,L2正则差异; 嵌入层/查表的前向和反向过程| 
-|P4: 构建 makemore 第三部分：激活函数与梯度，批量归一化|2026.6.30~|
+|P4: 构建 makemore 第三部分：激活函数与梯度，批量归一化|2026.7.2~|
 |P5: 构建 makemore 第四部分：成为反向传播高手|
 |P6: 构建 makemore 第五部分：构建 WaveNet|
 |P7: 从零开始，用代码详解构建 GPT|
