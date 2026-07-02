@@ -14,4 +14,6 @@ Github项目：
 + [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-hero)
 
 ## 关键内容
+
 需要更进一步了解激活值和反向传播，这样才能理解为什么RNN(循环神经网络)作为一种通用近似器，理论上可以实现所有算法，但是不容易通过我们常用的一阶梯度优化方法来进行高效训练
+
