@@ -19,6 +19,11 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 │   ├── 2_build_makemore.ipynb             # ✨ 广播机制(broadcast)
 │   ├── 3_MLP_demo.ipynb                   # 手动举例验证L1,L2正则差异;嵌入层/查表的前向和反向过程
 │   ├── 3_MLP_makemore.ipynb               # ✨ 词嵌入, torch.view(pytorch内部机制), 交叉熵损失函数
+│   ├── 4_MLP2_makemore.ipynb              # ✨ 随机初始化和激活函数带来的dead neuron问题; (随机初始化的问题)两个正态分布相乘结果的期望和方差计算;
+│   ├── 
+│   ├── 
+│   ├── 
+│   ├── 
 │   ├── ....
 │   ├── a_utils.py                         # 用于 1_micrograd_from_scratch.ipynb 的辅助函数
 │   ├── micrograd
