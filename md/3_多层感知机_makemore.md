@@ -24,11 +24,3 @@ Github项目：
 + following `Bengio et al. 2003` [A Neural Probabilistic Language Model](https://www.jmlr.org/papers/volume3/bengio03a/bengio03a.pdf)
 + 这个论文虽然不是第一个提出MLP的， 也不是第一个用MLP/神经网络来预测字符序列中下一个字符/标记的论文
 + 截止 2026.6.26， 这个论文的引用数量是 13527
-
-
-
-+ CNN, following DeepMind WaveNet 2016 (in progress...) [WAVENET: A GENERATIVE MODEL FOR RAW AUDIO](https://arxiv.org/pdf/1609.03499)
-+ RNN, following Mikolov et al. 2010 [Recurrent neural network based language model](https://www.fit.vut.cz/research/group/speech/public/publi/2010/mikolov_interspeech2010_IS100722.pdf)
-+ LSTM, following Graves et al. 2014 [Generating Sequences With Recurrent Neural Networks](https://arxiv.org/pdf/1308.0850)
-+ GRU, following Kyunghyun Cho et al. 2014 [On the Properties of Neural Machine Translation: Encoder–Decoder Approaches](https://arxiv.org/pdf/1409.1259)
-+ Transformer, following Vaswani et al. 2017 [Attention Is All You Need](https://arxiv.org/pdf/1706.03762)

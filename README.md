@@ -1,6 +1,7 @@
 - [learnGPTfromScratch](#learngptfromscratch)
   - [1. 文件结构说明](#1-文件结构说明)
   - [2. 学习进度记录](#2-学习进度记录)
+  - [3. 涉及的论文](#3-涉及的论文)
 
 # learnGPTfromScratch
 Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-hero)
@@ -46,13 +47,27 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 
 |任务|时间|前置知识|
 |---|---|---|
-|P1: 神经网络与反向传播详解：构建 micrograd| 2026.6.14~6.18| 前向计算，反向传播，python的操作符重载，pytorch |
-|P2: 语言建模详解：构建 makemore|2026.6.23~6.25|Bag-of-words(词袋模型), n-gram, softmax, 最大似然函数|
-|P3: 构建 makemore 第二部分：多层感知机 | 2026.6.26~6.29|词嵌入, torch.view(pytorch内部机制), 交叉熵损失函数; 手动举例验证L1,L2正则差异; 嵌入层/查表的前向和反向过程| 
-|P4: 构建 makemore 第三部分：激活函数与梯度，批量归一化|2026.7.2~|激活函数带来的dead neuron问题; 两个正态分布相乘结果的期望和方差计算; |
+|P1: 神经网络与反向传播详解：构建 micrograd| 2026.6.14~6.18| - 前向计算<br/>- 反向传播<br/>- python的操作符重载<br/>- pytorch |
+|P2: 语言建模详解：构建 makemore|2026.6.23~6.25|- Bag-of-words(词袋模型)<br/>- n-gram<br/>- softmax<br/>- 最大似然函数|
+|P3: 构建 makemore 第二部分：多层感知机 | 2026.6.26~6.29|- 词嵌入<br/>- torch.view(pytorch内部机制)<br/>- 交叉熵损失函数<br/>- 手动举例验证L1,L2正则差异<br/>- 嵌入层/查表的前向和反向过程| 
+|P4: 构建 makemore 第三部分：激活函数与梯度，批量归一化|2026.7.2~|- 激活函数带来的dead neuron问题<br/>- 两个正态分布相乘结果的期望和方差计算<br/>- 归一化:<br/>1. **输入端**（数据预处理）：Standardization / Normalization。处理的是原始数据（如图像像素、表格特征）, 常用的归一化包括：Min-Max 归一化、Z-score 标准化<br/>2. **隐藏层**（网络内部归一化）：BN、LN、IN、GN、RMSNorm 等。处理的是网络中间层的激活值（Activations / Hidden states）。<br/>3. **权重端**（参数归一化）：Weight Normalization。对神经网络的权重矩阵进行归一化，常用于 RNN 或某些生成模型。<br/>4. **输出端**（概率归一化）：Softmax、Sigmoid。将输出 logits 转化为概率分布（和为1或在0-1之间），本质上也是一种归一化。|
 |P5: 构建 makemore 第四部分：成为反向传播高手|
 |P6: 构建 makemore 第五部分：构建 WaveNet|
 |P7: 从零开始，用代码详解构建 GPT|
 |P8: GPT现状(BRK216HFS)|
 |P9: 构建 GPT 分词器|
 |P10: 复现 GPT-2 (124M 参数)|
+
+
+## 3. 涉及的论文
++ MLP, following Bengio et al. 2003 [A Neural Probabilistic Language Model](https://www.jmlr.org/papers/volume3/bengio03a/bengio03a.pdf)
++ CNN, following DeepMind WaveNet 2016 (in progress...) [WAVENET: A GENERATIVE MODEL FOR RAW AUDIO](https://arxiv.org/pdf/1609.03499)
++ RNN, following Mikolov et al. 2010 [Recurrent neural network based language model](https://www.fit.vut.cz/research/group/speech/public/publi/2010/mikolov_interspeech2010_IS100722.pdf)
++ LSTM, following Graves et al. 2014 [Generating Sequences With Recurrent Neural Networks](https://arxiv.org/pdf/1308.0850)
++ GRU, following Kyunghyun Cho et al. 2014 [On the Properties of Neural Machine Translation: Encoder–Decoder Approaches](https://arxiv.org/pdf/1409.1259)
++ Transformer, following Vaswani et al. 2017 [Attention Is All You Need](https://arxiv.org/pdf/1706.03762)
+
+----
+
++ kaiming init: [Delving Deep into Rectifiers: Surpassing Human-Level Performance on ImageNet Classification](https://arxiv.org/pdf/1502.01852)
++ batch normalization: [Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift](https://arxiv.org/pdf/1502.03167)
