@@ -38,8 +38,8 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
     ├── 2_语言建模详解_makemore.md
     ├── 3_多层感知机_makemore.md
     ├── 4_激活函数与梯度~批量归一化_makemore.md
-    ├── 
-    └── 
+    ├── 5_深入反向传播.md
+    └── a_难点查漏补缺.md                  # (●'◡'●)以前理解错误/有偏差的内容，彻底纠正
 ```
 
 ## 2. 学习进度记录
@@ -48,13 +48,15 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 
 每节课`---------------`上面是课程主要内容，下面是自己练习的一些补充内容
 
-|任务|时间|前置知识|
+
+
+|任务|时间|前置/补充知识|
 |---|---|---|
 |P1: 神经网络与反向传播详解：构建 micrograd| 2026.6.14~6.18| - 前向计算<br/>- 反向传播<br/>- python的操作符重载<br/>- pytorch<br/>---------------<br/>- Min-Max/hinge loss, L2正则|
 |P2: 语言建模详解：构建 makemore|2026.6.23~6.25|- Bag-of-words(词袋模型)<br/>- n-gram<br/>- softmax<br/>- 最大似然函数<br/>- 广播机制(broadcast)|
 |P3: 构建 makemore 第二部分：多层感知机 | 2026.6.26~6.29|- 词嵌入<br/>- torch.view(pytorch内部机制)<br/>- 交叉熵损失函数(数值稳定性-max)<br/>---------------<br/>- 手动举例验证L1,L2正则差异<br/>- 嵌入层/查表的前向和反向过程| 
 |P4: 构建 makemore 第三部分：激活函数与梯度，批量归一化|2026.7.2~7.16|- 激活函数带来的dead neuron问题<br/>- 两个正态分布相乘结果的期望和方差计算<br/>- 归一化:<br/>1. **输入端**（数据预处理）：Standardization / Normalization。处理的是原始数据（如图像像素、表格特征）, 常用的归一化包括：Min-Max 归一化、Z-score 标准化<br/>2. **隐藏层**（网络内部归一化）：BN、LN、IN、GN、RMSNorm 等。处理的是网络中间层的激活值（Activations / Hidden states）。<br/>3. **权重端**（参数归一化）：Weight Normalization。对神经网络的权重矩阵进行归一化，常用于 RNN 或某些生成模型。<br/>4. **输出端**（概率归一化）：Softmax、Sigmoid。将输出 logits 转化为概率分布（和为1或在0-1之间），本质上也是一种归一化。<br/>- 多层感知机(输入层，单个隐藏层，输出层)<br/>- BN详解<br/>- BN作用的卷积层/线性层的偏置梯度为0的代码, 前向/反向过程中偏置无效的原理推导<br/>- resnet里BN的实际使用和pytorch中BN层的参数说明<br/>---------------<br/>- 反向传播扩展和 3Blue1Brown视频<br/>- tanh的增益为什么是 5/3<br/>- 网络不同层的`权重更新量`:`权重值`(绘图判断网络训练效率/学习率设置科学性),科学诊断网络初始化参数设置的合理性|
-|P5: 构建 makemore 第四部分：成为反向传播高手| 2026.7.16~|
+|P5: 构建 makemore 第四部分：成为反向传播高手| 2026.7.16~|- 多分支节点的梯度=多分支的梯度的和(多元复合函数的全微分（链式法则）)<br/>- **pytorch张量中每个元素都有一个梯度值以及学习率缩放不影响梯度方向的正确理解**<br/>- 数学中，描述函数时提到的“一维、二维、n维”指的是什么|
 |P6: 构建 makemore 第五部分：构建 WaveNet|
 |P7: 从零开始，用代码详解构建 GPT|
 |P8: GPT现状(BRK216HFS)|
