@@ -14,7 +14,15 @@ Github项目：
 ## 关键内容
 + 肯定不是复现chatGPT，而是实现一个基于Transformer的网络，同时也不是word-level的，而依然是character-level的
 + 这里老师选择的数据集是 [karpathy/tiny_shakespeare](https://huggingface.co/datasets/karpathy/tiny_shakespeare), 或者Github上的：<https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt>
+  + [karpathy/char-rnn/data/tinyshakespeare/input.txt](https://github.com/karpathy/char-rnn/blob/master/data/tinyshakespeare/input.txt), 在这个页面点击下载，而不是预览+自己复制到本地
+  + 从这里可以看出，老师在11年前，也就是2015年就已经接触了RNN类的网络，同时在当年还用`lua`调用了`torch`来实现神经网络的训练
+  + <https://github.com/karpathy/char-rnn/tree/master>
+  + 所以老师之前的打算应该是想讲： [karpathy/char-rnn](https://github.com/karpathy/char-rnn/tree/master) 这个项目的
+  + 这个项目的项目介绍： `Multi-layer Recurrent Neural Networks (LSTM, GRU, RNN) for character-level language models in Torch`
 + 可以尝试下金庸？？？
+  + [分享 | 金庸全集武侠小说 全套共15 部 txt pdf epub mobi azw3](https://zhuanlan.zhihu.com/p/668049798)
+  + [分享 | 金庸全集武侠小说作品集 全套共15 部 txt pdf epub mobi azw3](https://isanthree.github.io/2020/08/06/jin-yong-qian-ji-txt-pdf-epub-mobi-azw3-m/)
+
 
 完整的训练过程位于： [karpathy/nanoGPT](https://github.com/karpathy/nanogpt)
 

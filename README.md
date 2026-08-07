@@ -2,6 +2,9 @@
   - [1. 文件结构说明](#1-文件结构说明)
   - [2. 学习进度记录](#2-学习进度记录)
   - [3. 涉及的论文](#3-涉及的论文)
+  - [4. 前沿研究](#4-前沿研究)
+    - [1. 机械可解释性（Mechanistic Interpretability, 简称 MI）](#1-机械可解释性mechanistic-interpretability-简称-mi)
+    - [2. 知识编辑（Model Editing）](#2-知识编辑model-editing)
 
 # learnGPTfromScratch
 Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-hero)
@@ -15,17 +18,21 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 .
 ├── code
 │   ├── 1_micrograd_demo.ipynb             # Min-Max/hinge loss, L2正则
-│   ├── 1_micrograd_from_scratch.ipynb     # ✨ 手写最简单的反向梯度和模型训练框架
+│   ├── 1_micrograd_from_scratch.ipynb     # ✨micrograd:  手写最简单的反向梯度和模型训练框架
 │   ├── 2_build_demo.ipynb                 # bigram用于中文语料的效果
-│   ├── 2_build_makemore.ipynb             # ✨ 广播机制(broadcast)
+│   ├── 2_build_makemore.ipynb             # ✨makemore_Part1:  广播机制(broadcast)
 │   ├── 3_MLP_demo.ipynb                   # 手动举例验证L1,L2正则差异;嵌入层/查表的前向和反向过程
-│   ├── 3_MLP_makemore.ipynb               # ✨ 词嵌入, torch.view(pytorch内部机制), 交叉熵损失函数
+│   ├── 3_MLP_makemore.ipynb               # ✨makemore_Part2:   词嵌入, torch.view(pytorch内部机制), 交叉熵损失函数
 │   ├── 4_MLP2_demo.ipynb                  # 把4_MLP2_makemore中的内容变得更pytorch化并训练一个更深的神经网络(反向传播扩展和 3Blue1Brown视频)
-│   ├── 4_MLP2_makemore.ipynb              # ✨ 随机初始化和激活函数带来的dead neuron问题; (随机初始化的问题)两个正态分布相乘结果的期望和方差计算;
+│   ├── 4_MLP2_makemore.ipynb              # ✨makemore_Part3:   随机初始化和激活函数带来的dead neuron问题; (随机初始化的问题)两个正态分布相乘结果的期望和方差计算;
 │   ├── 5_backward_demo.ipynb              # 全导数(数学方式)求导 vs 计算图(程序可模块化的分步)求导
-│   ├── 5_backward_makemore.ipynb          # 手动计算交叉熵损失和BN的反向梯度，替代loss.backward()
-│   ├── 
-│   ├── 
+│   ├── 5_backward_makemore.ipynb          # ✨makemore_Part4:   手动计算交叉熵损失和BN的反向梯度，替代loss.backward()
+│   ├── 6_WaveNet_makemore.ipynb           # ✨makemore_Part5:   更pytorch化的网络表达，多维数组dim的意义  
+│   ├── zero_gpt                           # ✨nanoGPT
+│   │   ├── 7_start_GPT.ipynb              # 从0开始写GPT的草稿，校验过的代码在train.py里
+│   │   ├── train.py 
+│   │   ├── 
+│   │   └──                                # 
 │   ├── ....
 │   ├── a_utils.py                         # 用于 1_micrograd_from_scratch.ipynb 的辅助函数
 │   ├── micrograd
@@ -39,6 +46,7 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
     ├── 3_多层感知机_makemore.md
     ├── 4_激活函数与梯度~批量归一化_makemore.md
     ├── 5_深入反向传播.md
+    ├── ...   
     └── a_难点查漏补缺.md                  # (●'◡'●)以前理解错误/有偏差的内容，彻底纠正
 ```
 
@@ -76,3 +84,40 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 
 + kaiming init: [Delving Deep into Rectifiers: Surpassing Human-Level Performance on ImageNet Classification](https://arxiv.org/pdf/1502.01852)
 + batch normalization: [Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift](https://arxiv.org/pdf/1502.03167)
+
+---
+
+## 4. 前沿研究
+### 1. 机械可解释性（Mechanistic Interpretability, 简称 MI）
+直接看网站： [Anthropic’s Interpretability Research](https://transformer-circuits.pub/)
++ [A Mathematical Framework for Transformer Circuits](https://transformer-circuits.pub/2021/framework/index.html)
+  + 网页版本，没有pdf版本，直接页面翻译阅读吧
++ [In-context Learning and Induction Heads](https://transformer-circuits.pub/2022/in-context-learning-and-induction-heads/index.html)
+  + 网页版本， 虽然有arxiv上的pdf版本，但是很明显，是直接html直接保存成pdf的
++ [Toy Models of Superposition](https://transformer-circuits.pub/2022/toy_model/index.html)
+  + 同上
++ [Towards Monosemanticity: Decomposing Language Models With Dictionary Learning](https://transformer-circuits.pub/2023/monosemantic-features)
+  + 同上
++ [anthropic-Mapping the Mind of a Large Language Model ](https://www.anthropic.com/research/mapping-mind-language-model)
+  + 对应的链接：[transformer-circuits.pub: Scaling Monosemanticity: Extracting Interpretable Features from Claude 3 Sonnet](https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html)
+  + 搜索过程中还顺带看到这个：[Mapping the Minds of LLMs: A Graph-Based Analysis of Reasoning LLM](https://arxiv.org/pdf/2505.13890)
++ [OpenAI-Multimodal neurons in artificial neural networks](https://openai.com/index/multimodal-neurons/)
+  + [distill-Multimodal Neurons in Artificial Neural Networks](https://distill.pub/2021/multimodal-neurons/), 我最喜欢的已经停运的`distill`网站，
++ [A Mechanistic Interpretability Analysis of Grokking](https://www.alignmentforum.org/posts/N6WM6hs7RQMKDhYjB/a-mechanistic-interpretability-analysis-of-grokking)
+  + 这个有论文，arxiv上的，[PROGRESS MEASURES FOR GROKKING VIA MECHANISTIC INTERPRETABILITY](https://arxiv.org/pdf/2301.05217)
+
+### 2. 知识编辑（Model Editing）
++ [Locating and Editing Factual Associations in GPT](https://rome.baulab.info/)
+  + ROME (Rank-One Model Editing) 技术
+  + 这也是个网页版的，下面很多引用也都是代表作
+  + 这个有论文，arxiv上的, [Locating and Editing Factual Associations in GPT](https://arxiv.org/pdf/2202.05262)
++ [Mass Editing Memory in a Transformer](https://memit.baulab.info/)
+  + MEMIT技术，[MASS-EDITING MEMORY IN A TRANSFORMER](https://arxiv.org/pdf/2210.07229)
+
+
+---
+
++ TransformerLens：由著名独立研究员 Neel Nanda 开发的开源 Python 库。它是目前做机械可解释性最权威、最常用的工具，专门用于提取、缓存和分析 Transformer 每一层的激活值和注意力模式。
++ Neuronpedia：一个可视化的在线数据库，展示了通过 SAE 提取出的数以万计的 LLM 内部“特征”，你可以直观地搜索“哪些神经元对‘猫’敏感”。
++ BertViz：由 Jesse Vig 开发的注意力机制可视化工具，能极其直观地展示注意力头在句子词元（Token）之间的连线关系。
++ Distill.pub：虽然已停止更新，但 Chris Olah 团队早年在这里发表的关于 CNN 和 Transformer 视觉化解析的文章（如 Feature Visualization），至今仍是该领域的“圣经”，排版和交互极其精美。
