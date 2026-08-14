@@ -26,4 +26,6 @@ Github项目：
 
 完整的训练过程位于： [karpathy/nanoGPT](https://github.com/karpathy/nanogpt)
 
+Bigram示例代码位于： [karpathy/ng-video-lecture](https://github.com/karpathy/ng-video-lecture)
+
 这节课用到的notebook地址(Google Colab): https://colab.research.google.com/drive/1JMLa53HDuA-i7ZBmqV7ZnA3c_fvtXnx-?usp=sharing
