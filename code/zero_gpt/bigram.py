@@ -10,9 +10,9 @@ import torch.nn.functional as F
 # 超参设置
 batch_size = 32
 block_size = 8
-max_iters = 3000
+max_iters = 3000     # jupyterlab里是 10000
 eval_interval = 300
-learning_rate = 1e-2
+learning_rate = 1e-2  # jupyterlab里是1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
 
@@ -61,6 +61,7 @@ def estimate_loss(model):
             losses[k] = loss.item()
         out[split] = losses.mean()
     model.train() # 评估结束后，恢复模型的训练模式
+    # 虽然这个网络目前没有用BN等训练/评测行为不一致的层，但是养成思考mode的习惯还是很重要的
     return out
 
 class BigramLanguageModel(nn.Module):
@@ -112,6 +113,7 @@ print(decode(m.generate(context, max_new_token=500)[0].tolist()))
 # python code/zero_gpt/bigram.py
 # 运行得到以下结果：
 # model is m?  True
+# max_iters = 3000
 # step 0: train loss 4.7265, val loss 4.7260
 # step 300: train loss 4.3852, val loss 4.3876
 # step 600: train loss 4.0764, val loss 4.0828
@@ -124,3 +126,27 @@ print(decode(m.generate(context, max_new_token=500)[0].tolist()))
 # step 2700: train loss 2.8758, val loss 2.8779
 # 2.8591721057891846
 # 性能指标差不多
+
+
+# 但是这里生成的结果看起来有点像乱码
+
+
+
+# CExfikRO:
+# wcowf,ST;OLOL, btK
+
+# HAPTombobeAUGe.
+# SGJO-33SM:C?YIUauss:LVXEthafNusqhathe.t?ar dXlaSpates wicrd RWI,
+# DERacomzoroup
+# Yow&$FMOUf isth bHEv!$Whedilin,
+
+# W:ireeYERngmin latiHFlililv ts, anenWk p.
+# Gr ilyWjbo!
+# el.lind me u.
+# -huD3SPy wiry:CUEOKMORT'X3Qw y. w'sBoUSInormopeYelgCIEJMk:
+# Gll, d motSPkllo W-SPA whrVCeiib3s wor m dE$HZAETENGShireAs p-LK3:Cl-xTre
+
+# ALkOMmnterupt f s z; iris!
+# m:CENGjey aleUE$ERUNMadPrD?d KISo myaHKINLIk!
+# Ktiyb&y,:
+# SadaplWPT:VE:zLUYBinin cNuk?ayeaney Iry tsmI&fy VEc!3My
