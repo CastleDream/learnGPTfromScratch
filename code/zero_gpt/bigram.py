@@ -15,6 +15,7 @@ eval_interval = 300
 learning_rate = 1e-2  # jupyterlab里是1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
+n_embed = 32  # embedding维度
 
 # 随机数种子固定
 torch.manual_seed(1337)
@@ -65,12 +66,27 @@ def estimate_loss(model):
     return out
 
 class BigramLanguageModel(nn.Module):
-    def __init__(self, vocab_size):
+    # vocab_size已经是全局变量了，这里没必要再传入了
+    def __init__(self):
         super().__init__()
-        self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
+        self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
+        # 为了把token_embedding的值转为logits值，这里加一个线性层
+        self.lm_head = nn.Linear(n_embed, vocab_size)
+        # lm_head 即 language model head，语言模型的头部的简称
+
+        # 不仅要编码词元的身份信息(identity), 即 tok_emb，还要编码位置信息(position)
+        # 因此引入第二个table
+        
     
     def forward(self, idx, targets= None):
-        logits = self.token_embedding_table(idx)
+        # logits = self.token_embedding_table(idx)
+
+        # 不会再直接用词表嵌入查询得到的结果直接作为logits值了
+        tok_emb = self.token_embedding_table(idx)  # token_embedding  (B,T,C，这里的C就是n_embed)
+        logits = self.lm_head(tok_emb) # (B,T,C,这里的C就是vocab_size) 
+        
+
+
         if targets is None:
             loss = None
         else:
@@ -86,7 +102,7 @@ class BigramLanguageModel(nn.Module):
         return idx
 
 
-model = BigramLanguageModel(vocab_size)
+model = BigramLanguageModel()
 m = model.to(device)
 print(f"model is m? ", model is m )  # model 和 m 其实指向同一个模型对象。
 # model = BigramLanguageModel(vocab_size).to(device) # 这样写其实更好
@@ -111,7 +127,10 @@ print(decode(m.generate(context, max_new_token=500)[0].tolist()))
 
 
 # python code/zero_gpt/bigram.py
-# 运行得到以下结果：
+
+# v2版本
+
+# v1版本： 运行得到以下结果：
 # model is m?  True
 # max_iters = 3000
 # step 0: train loss 4.7265, val loss 4.7260
@@ -129,9 +148,6 @@ print(decode(m.generate(context, max_new_token=500)[0].tolist()))
 
 
 # 但是这里生成的结果看起来有点像乱码
-
-
-
 # CExfikRO:
 # wcowf,ST;OLOL, btK
 
