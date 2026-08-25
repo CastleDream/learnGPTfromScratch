@@ -70,23 +70,32 @@ class BigramLanguageModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
+
         # 为了把token_embedding的值转为logits值，这里加一个线性层
+        # 根据 https://docs.pytorch.org/docs/2.13/generated/torch.nn.Linear.html
+        # 线性层的in_features 和out_features 分别对应输入和输出的最后一个维度，即 Input:(*, in_features) -> Output:(*, out_features)
+        # 所以下面 logits = self.lm_head(x)，输入是(B,T,n_embed)，输出是(B,T,vocab_size)
         self.lm_head = nn.Linear(n_embed, vocab_size)
         # lm_head 即 language model head，语言模型的头部的简称
 
         # 不仅要编码词元的身份信息(identity), 即 tok_emb，还要编码位置信息(position)
         # 因此引入第二个table
-        
+        self.position_embedding_table = nn.Embedding(block_size, n_embed) # 注意，这里的位置索引是 [0, block_size-1]个n_embed维的嵌入
     
     def forward(self, idx, targets= None):
+        B,T = idx.shape # batch size, time steps/block size
         # logits = self.token_embedding_table(idx)
 
         # 不会再直接用词表嵌入查询得到的结果直接作为logits值了
         tok_emb = self.token_embedding_table(idx)  # token_embedding  (B,T,C，这里的C就是n_embed)
-        logits = self.lm_head(tok_emb) # (B,T,C,这里的C就是vocab_size) 
+        # 还需要引入位置编码，位置嵌入不会随着batch改变，所以一个就够了
+        pos_emb = self.position_embedding_table(torch.arange(T,device=device)) # (T,C) [0,T-1]个n_embed维的嵌入
+        x = tok_emb + pos_emb 
+        # 直接对后者广播就可以，所以位置嵌入在一个batch里是一样的
+        # (B,T,n_embed) + (T, n_embed)-> (B,T,n_embed)    
+        # 这里的位置嵌入暂时没啥作用，因为还只是个简单的bigram模型，这里没有自注意力机制等，所以不管是哪个位置，在这种情况下都具有平移不变性(translation invariance)，所以位置嵌入的作用不大
+        logits = self.lm_head(x) # (B,T,C,这里的C就是vocab_size, 线性层只对最后一个维度做线性变换) 
         
-
-
         if targets is None:
             loss = None
         else:
