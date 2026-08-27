@@ -29,3 +29,4 @@ Github项目：
 Bigram示例代码位于： [karpathy/ng-video-lecture](https://github.com/karpathy/ng-video-lecture)
 
 这节课用到的notebook地址(Google Colab): https://colab.research.google.com/drive/1JMLa53HDuA-i7ZBmqV7ZnA3c_fvtXnx-?usp=sharing
+

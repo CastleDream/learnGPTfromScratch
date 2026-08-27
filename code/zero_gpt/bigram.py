@@ -65,6 +65,48 @@ def estimate_loss(model):
     # 虽然这个网络目前没有用BN等训练/评测行为不一致的层，但是养成思考mode的习惯还是很重要的
     return out
 
+class Head(nn.Module):
+    """single-head 自注意力机制
+    老师的实现其实是位于： https://github.com/karpathy/ng-video-lecture/blob/master/gpt.py
+
+    原始的transformer网络结构可以参考：
+    https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/transformer.py
+
+    如果想在transformers库里看其他网络的相关实现：
+
+    Encoder最经典的实现是 BERT (BertSelfAttention):   
+    https://github.com/huggingface/transformers/blob/main/src/transformers/models/bert/modeling_bert.py#L139
+
+    带 Mask 的 Decoder最经典的实现是 GPT-2 (GPT2Attention)
+    https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/modeling_gpt2.py#L75
+
+    同时包含 Encoder 和 Decoder，并且两者通过 Cross-Attention 交互的完整原始架构，最贴近的参考是 BART 或 T5
+
+    https://github.com/huggingface/transformers/blob/main/src/transformers/models/bart/modeling_bart.py#L143
+    https://github.com/huggingface/transformers/blob/main/src/transformers/models/t5/modeling_t5.py#L176
+    """
+    def __init__(self, head_size):
+        super().__init__()
+        # n_embed是脚本开头定义的全局变量
+        self.head_size = head_size
+        self.key = nn.Linear(n_embed, head_size, bias=False)
+        self.query = nn.Linear(n_embed, head_size, bias=False)
+        self.value = nn.Linear(n_embed, head_size, bias=False)
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+        # tril不是这个nn.Module的参数，因此按照pytorch的规定，就以缓冲的形式存在了
+    
+    def forward(self, x):
+        B, T, C = x.shape
+        k = self.key(x)        # k(B,T,head_size)
+        q = self.query(x)      # q(B,T,head_size)
+        v = self.value(x)      
+        weight = (q@k.transpose(-2,-1))*self.head_size**(-0.5)   # q@k^T → (B,T,T) 需要乘以 head_size**(-0.5)
+        weight = weight.mask_filled(self.tril[:T,:T]==0, float('-inf'))
+        weight = F.softmax(weight, dim = -1)
+        out = weight@v        # (B,T,T)@(B,T,head_size) → (B,T,head_size)
+        return out
+
+
 class BigramLanguageModel(nn.Module):
     # vocab_size已经是全局变量了，这里没必要再传入了
     def __init__(self):
@@ -101,6 +143,7 @@ class BigramLanguageModel(nn.Module):
         else:
             loss = F.cross_entropy(logits.view(-1,vocab_size), targets.view(-1))
         return logits,loss
+    
     def generate(self, idx, max_new_token):
         for _ in range(max_new_token):
             logits,loss = self.forward(idx) 
@@ -111,67 +154,31 @@ class BigramLanguageModel(nn.Module):
         return idx
 
 
-model = BigramLanguageModel()
-m = model.to(device)
-print(f"model is m? ", model is m )  # model 和 m 其实指向同一个模型对象。
-# model = BigramLanguageModel(vocab_size).to(device) # 这样写其实更好
-optimizer = torch.optim.AdamW(m.parameters(), lr = 1e-3)
-# 在 PyTorch 里，nn.Module.to(device) 一般是 in-place 操作，也就是它会把 model 本身的参数、buffer 等移动到指定设备，然后 返回同一个对象 self。
+def train_bigram():
+    model = BigramLanguageModel()
+    m = model.to(device)
+    print(f"model is m? ", model is m )  # model 和 m 其实指向同一个模型对象。
+    # model = BigramLanguageModel(vocab_size).to(device) # 这样写其实更好
+    optimizer = torch.optim.AdamW(m.parameters(), lr = 1e-3)
+    # 在 PyTorch 里，nn.Module.to(device) 一般是 in-place 操作，也就是它会把 model 本身的参数、buffer 等移动到指定设备，然后 返回同一个对象 self。
 
-for iters in range(max_iters):
-    # 每eval_interval步，评估一次训练集和验证集的损失
-    if iters%eval_interval == 0:
-        losses = estimate_loss(m)
-        print(f"step {iters}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-    
-    xb,yb = get_batch('train', batch_size)
-    logits, loss = m(xb,yb)
-    optimizer.zero_grad(set_to_none = True)
-    loss.backward()
-    optimizer.step()
-print(loss.item())
+    for iters in range(max_iters):
+        # 每eval_interval步，评估一次训练集和验证集的损失
+        if iters%eval_interval == 0:
+            losses = estimate_loss(m)
+            print(f"step {iters}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        
+        xb,yb = get_batch('train', batch_size)
+        logits, loss = m(xb,yb)
+        optimizer.zero_grad(set_to_none = True)
+        loss.backward()
+        optimizer.step()
+    print(loss.item())
 
-context = torch.zeros((1,1), dtype=torch.long, device=device)
-print(decode(m.generate(context, max_new_token=500)[0].tolist()))
+    context = torch.zeros((1,1), dtype=torch.long, device=device)
+    print(decode(m.generate(context, max_new_token=500)[0].tolist()))
 
 
 # python code/zero_gpt/bigram.py
-
-# v2版本
-
-# v1版本： 运行得到以下结果：
-# model is m?  True
-# max_iters = 3000
-# step 0: train loss 4.7265, val loss 4.7260
-# step 300: train loss 4.3852, val loss 4.3876
-# step 600: train loss 4.0764, val loss 4.0828
-# step 900: train loss 3.8123, val loss 3.8163
-# step 1200: train loss 3.5830, val loss 3.5883
-# step 1500: train loss 3.3864, val loss 3.3892
-# step 1800: train loss 3.2168, val loss 3.2222
-# step 2100: train loss 3.0811, val loss 3.0871
-# step 2400: train loss 2.9648, val loss 2.9724
-# step 2700: train loss 2.8758, val loss 2.8779
-# 2.8591721057891846
-# 性能指标差不多
-
-
-# 但是这里生成的结果看起来有点像乱码
-# CExfikRO:
-# wcowf,ST;OLOL, btK
-
-# HAPTombobeAUGe.
-# SGJO-33SM:C?YIUauss:LVXEthafNusqhathe.t?ar dXlaSpates wicrd RWI,
-# DERacomzoroup
-# Yow&$FMOUf isth bHEv!$Whedilin,
-
-# W:ireeYERngmin latiHFlililv ts, anenWk p.
-# Gr ilyWjbo!
-# el.lind me u.
-# -huD3SPy wiry:CUEOKMORT'X3Qw y. w'sBoUSInormopeYelgCIEJMk:
-# Gll, d motSPkllo W-SPA whrVCeiib3s wor m dE$HZAETENGShireAs p-LK3:Cl-xTre
-
-# ALkOMmnterupt f s z; iris!
-# m:CENGjey aleUE$ERUNMadPrD?d KISo myaHKINLIk!
-# Ktiyb&y,:
-# SadaplWPT:VE:zLUYBinin cNuk?ayeaney Iry tsmI&fy VEc!3My
+if __name__ == "__main__":
+    train_bigram()

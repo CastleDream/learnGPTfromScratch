@@ -3,6 +3,7 @@
   - [1.2 优化器处理张量的视角](#12-优化器处理张量的视角)
   - [1.3  梯度更新-整个张量的所有分量梯度按学习率比例缩放](#13--梯度更新-整个张量的所有分量梯度按学习率比例缩放)
   - [1.4 示例总结](#14-示例总结)
+- [2. register\_buffer() vs register\_parameter()](#2-register_buffer-vs-register_parameter)
 
 # 1. 张量的梯度理解(pytorch中每个张量单个元素的grad意味着为什么)
 
@@ -79,3 +80,14 @@ z = 3x + 4y
 # 这里[a1, a2, ...,a6]其实就是每个分量的偏导， [w1,w2,..., w6]就相当于是在高维空间的6个轴上的投影值
 # [a1, a2, ...,a6]合在一起的向量，就是梯度值
 ```
+
+# 2. register_buffer() vs register_parameter()
+
+关于buffer， 根据
++ [Reference API -> torch.nn -> Buffer](https://docs.pytorch.org/docs/2.13/generated/torch.nn.parameter.Buffer.html)
++ [register_buffer](https://docs.pytorch.org/docs/2.13/generated/torch.nn.Module.html#torch.nn.Module.register_buffer)
+
+
+其他参考：
++ https://discuss.pytorch.org/t/what-is-the-difference-between-register-buffer-and-register-parameter-of-nn-module/32723
++ https://stackoverflow.com/questions/57540745/what-is-the-difference-between-register-parameter-and-register-buffer-in-pytorch
