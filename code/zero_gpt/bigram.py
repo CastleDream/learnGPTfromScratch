@@ -70,22 +70,6 @@ class Head(nn.Module):
     对应论文里的 缩放点积注意力机制  Scaled Dot-Product Attention
 
     老师的实现其实是位于： https://github.com/karpathy/ng-video-lecture/blob/master/gpt.py
-
-    原始的transformer网络结构可以参考：
-    https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/transformer.py
-
-    如果想在transformers库里看其他网络的相关实现：
-
-    Encoder最经典的实现是 BERT (BertSelfAttention):   
-    https://github.com/huggingface/transformers/blob/main/src/transformers/models/bert/modeling_bert.py#L139
-
-    带 Mask 的 Decoder最经典的实现是 GPT-2 (GPT2Attention)
-    https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/modeling_gpt2.py#L75
-
-    同时包含 Encoder 和 Decoder，并且两者通过 Cross-Attention 交互的完整原始架构，最贴近的参考是 BART 或 T5
-
-    https://github.com/huggingface/transformers/blob/main/src/transformers/models/bart/modeling_bart.py#L143
-    https://github.com/huggingface/transformers/blob/main/src/transformers/models/t5/modeling_t5.py#L176
     """
     def __init__(self, head_size):
         super().__init__()
@@ -110,15 +94,61 @@ class Head(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
+    """
+
+    参考：
+    torch/nn/modules/activation.py # MultiheadAttention
+    https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/activation.py#L1090
+    """
     def __init__(self, num_heads, head_size):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+        self.proj = nn.Linear(n_embed, n_embed)
     
     def forward(self, x):
         # 多头自注意力机制，本质上就是让多个自注意力机制头并行运行，再把结果拼接到一起
         # 根据上面的Heads可知 h(x).shape = (B,T,head_size) 所以最后在head_size上拼接，刚好就可以得到 num_heads*head_size的维度
         # 即：(B, T, num_heads*head_size)
-        return torch.cat([h(x) for h in self.heads], dim = -1)
+        out = torch.cat([h(x) for h in self.heads], dim = -1)
+        out = self.proj(out)
+        # 这里加的这个线性层是为了让多头信息更好的融合，多头直出的结果是拼接的，并没有进行计算融合
+        return out
+
+
+class FeedForward(nn.Module):
+    """
+    不难发现，前馈层里的线性层，处理的对象是单个token，是token级别的处理
+    即：
+    自注意机制负责的token之间的信息交互，在token交互完数据之后(gather之后)
+    需要每个token自身再整理一遍信息
+    """
+    def __init__(self, n_embed):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embed, n_embed),
+            nn.ReLU()
+        )
+    
+    def forward(self,x):
+        return self.net(x)
+
+class Block(nn.Module):
+    """构建 自注意力机制+前馈层的块，方便之后重复多次调用
+    """
+    def __init__(self, n_embed, n_head):
+        super().__init__()
+        head_size = n_embed//n_head
+        self.sa = MultiHeadAttention(n_head, head_size)
+        self.ffwd = FeedForward(n_embed)
+    
+    def forward(self, x):
+        # x = self.sa(x)     # 先token之间的信息交互
+        # x = self.ffwd(x)   # 再单个token信息整理/计算
+        # 添加残差连接，关于为什么是分开加了两次，详见：https://arxiv.org/pdf/2002.04745v1 里的Fig.1
+        x = x + self.sa(x)   
+        x = x + self.ffwd(x)   
+        return x
+
 
 class BigramLanguageModel(nn.Module):
     # vocab_size已经是全局变量了，这里没必要再传入了
@@ -140,7 +170,15 @@ class BigramLanguageModel(nn.Module):
         # 加一个自注意力机制头 sa_head表示 self attention head
         # self.sa_head = Head(n_embed)  # 这里给的比较简单，直接用n_embed作为head_size了
         # 改为多头自注意力机制
-        self.sa_head = MultiHeadAttention(4, n_embed//4)  # 4个头，每个head的head_size是32//4=8
+        # self.sa_head = MultiHeadAttention(4, n_embed//4)  # 4个头，每个head的head_size是32//4=8
+        # self.ffwd = FeedForward(n_embed)
+
+        # 用block代替上面单个组件
+        self.blocks = nn.Sequential(
+            Block(n_embed, 4),
+            Block(n_embed, 4),
+            Block(n_embed, 4),
+        )
 
     
     def forward(self, idx, targets= None):
@@ -166,7 +204,10 @@ class BigramLanguageModel(nn.Module):
         # 虽然和分组卷积很像，但是多头注意力机制和同样输出维度的单头的参数量是一样的，并没有减少参数和计算量
         # self.sa_head = Head(n_embed)
         # self.sa_head = MultiHeadAttention(4, n_embed//4)
-        x = self.sa_head(x)    # 这里返回的结果是 (B,T,n_embed) 刚好和下面这层的输入对上了
+        # x = self.sa_head(x)    # 这里返回的结果是 (B,T,n_embed) 刚好和下面这层的输入对上了
+        # x = self.ffwd(x)
+        # 用block代替上面单个组件
+        x = self.blocks(x)
         logits = self.lm_head(x) # (B,T,C,这里的C就是vocab_size, 线性层只对最后一个维度做线性变换) 
         
         if targets is None:
@@ -215,9 +256,32 @@ def train_bigram():
     print(decode(m.generate(context, max_new_token=500)[0].tolist()))
 
 
+def plot_head_size_diff():
+    """画一下head_size=8和32的softmax结果函数曲线和方差
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    x = np.arange(0,1,0.05)
+    title = ''
+    for head_size in [8,32]:
+        output = x*head_size**(-0.5)
+        prob = np.exp(output)/sum(np.exp(output))  # softmax
+        var = prob.var()
+        title+=f"{head_size}: softmax var = {var:.6e}\n"
+        print(f"head_size = {head_size}, 计算得到的 var 值为: {var}")
+        plt.plot(x, output, label=f'output = x * {head_size}^(-0.5)')
+    plt.title(title.strip())
+    plt.xlabel('Input')
+    plt.ylabel('Output')
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.show()
+    
+
 # python code/zero_gpt/bigram.py
 if __name__ == "__main__":
     train_bigram()
+    # plot_head_size_diff()
 
 
 # 不加自注意力机制的结果              2.8591 
@@ -226,6 +290,10 @@ if __name__ == "__main__":
 #                                     ↓
 # 加相同输出维度的多头自注意力的结果   2.1640  生成的更好一些了 说明词云之间真的有很多信息需要交流
 # 关于为什么相同输出维度的多头比单头效果好 详见： md\a_难点查漏补缺.md
+#                                     ↓
+# 多头自注意力 + feedforward         2.206  可能有一些随机偏差
+#                                     ↓
+# 多个block实现的sa+ffwd             2.289  由于网络开始变得很深，但是数据又比较少，就很容易出现优化上的问题，因此考虑加入skip connection(或者称为残差连接)
 
 
 # 不加自注意力机制的结果
@@ -258,3 +326,25 @@ if __name__ == "__main__":
 # step 4500: train loss 2.2575, val loss 2.2848
 # step 4800: train loss 2.2456, val loss 2.2790
 # 2.1640796661376953
+
+# 多头自注意力 + feedforward
+# step 0: train loss 4.2493, val loss 4.2469
+# step 300: train loss 2.7881, val loss 2.8002
+# step 600: train loss 2.5686, val loss 2.5719
+# step 900: train loss 2.4917, val loss 2.4942
+# ...
+# step 4200: train loss 2.2480, val loss 2.2639
+# step 4500: train loss 2.2416, val loss 2.2673
+# step 4800: train loss 2.2276, val loss 2.2546
+# 2.2067973613739014
+
+# 多个block实现的多头自注意力 + feedforward
+# step 0: train loss 4.2087, val loss 4.2076
+# step 300: train loss 3.1733, val loss 3.1852
+# step 600: train loss 2.8543, val loss 2.8415
+# step 900: train loss 2.7089, val loss 2.6986
+# ....
+# step 4200: train loss 2.3312, val loss 2.3362
+# step 4500: train loss 2.3278, val loss 2.3323
+# step 4800: train loss 2.3057, val loss 2.3124
+# 2.289051055908203

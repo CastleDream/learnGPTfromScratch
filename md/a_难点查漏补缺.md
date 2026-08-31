@@ -6,6 +6,9 @@
   - [1.5 梯度下降的局限性（损失函数对每个参数分量的偏导减小的方向，不一定是全局减小的方向）](#15-梯度下降的局限性损失函数对每个参数分量的偏导减小的方向不一定是全局减小的方向)
 - [2. register\_buffer() vs register\_parameter()](#2-register_buffer-vs-register_parameter)
 - [3. 相同输出维度的单头和多头性能差异](#3-相同输出维度的单头和多头性能差异)
+- [4. skip-connection的“零初始化” (Zero-Initialization)](#4-skip-connection的零初始化-zero-initialization)
+- [5. transformer里的残差连接](#5-transformer里的残差连接)
+- [X. transformer类网络和具体实现](#x-transformer类网络和具体实现)
 
 # 1. 张量的梯度理解(pytorch中每个张量单个元素的grad意味着为什么)
 
@@ -113,7 +116,7 @@ z = 3x + 4y
 1. **数学上**：在当前位置的**局部切平面**上，梯度更新的方向确实是保证整体损失减小最快的方向，且每个分量的更新在局部也是使损失减小的。
 2. **实际上**：由于神经网络是高度非凸的，梯度方向只是**当前点局部最优的贪心方向**。它没有考虑参数间的耦合和全局地形，因此不保证是全局最优方向。
 
-这也是为什么在实际训练中，我们很少使用最原始的梯度下降（SGD），而是引入**动量（Momentum）** 来积累历史方向以抵抗局部噪声，或者使用 **Adam** 等自适应优化器，甚至研究**二阶优化算法（如K-FAC）**，目的都是为了在复杂的参数耦合中，找到比“单纯看局部偏导”更好的“统一更新方向”。
+这也是为什么在实际训练中，我们很少使用最原始的梯度下降（SGD），而是引入**动量（Momentum）** 来积累历史方向以抵抗局部噪声，或者使用 **Adam** 等自适应优化器，甚至研究**二阶优化算法（如K-FAC）**，目的都是为了**在复杂的参数耦合中，找到比“单纯看局部偏导”更好的“统一更新方向”**。
 
 
 ----
@@ -122,14 +125,40 @@ z = 3x + 4y
 >[!NOTE]
 >prompt: 在输出维度相同的情况下，例如： C=32, 直接用head_size=32的 scaled dot-product attention 单头注意力机制的结果，要比用head=4, head_size=8的multi_head Attention效果差，其实两种网络的参数大小和计算量一样，有梯度更新的原因吗？比如：单头的三个线性层是直接 32*32个元素一起更新，而多头则是4个 32*8元素分别更新，是否可以认为，参数的分量越少，这些分量之间的耦合或者对整体更新方向的影响越小，结果会越好？
 
->[!NOTE]
->KIMI的回答：
->+ **单头（32×32）**：Q、K、V 的梯度更新是一个完整的 32×32 矩阵。`某一步梯度下降时，为了改善某个特定位置的注意力，可能需要同时调整 32 个维度`。这容易导致梯度冲突（gradient interference）——改善任务 A 的方向可能损害任务 B。
->+ **多头（4×32×8）**：每个头独立计算注意力，梯度分别回传。头 1 的梯度只更新它自己的 32×8 投影矩阵，不会直接干扰头 2 的参数。这相当于把一个大优化问题分解为 4 个相对独立的子问题。
->+ 但`这不仅仅是“分量越少，耦合越小”这么简单`。更准确的说法是：
->+ MHA 通过结构化分解，引入了“归纳偏置”（inductive bias），使得优化 landscape 更友好。 每个子空间的维度更低（8 vs 32），
->    + Softmax 在低维空间更容易形成尖锐的、稀疏的注意力峰值，梯度信号更清晰。
->    + 而在 32 维单头中，Softmax 的梯度往往更平滑，容易陷入“所有位置都关注一点”的平庸解。
+`这不仅仅是“分量越少，耦合越小”这么简单`。
+
+从**概率分布的方差**来看这个问题：
++ Softmax 在**低维空间**更容易形成尖锐的、稀疏的注意力峰值，梯度信号更清晰。
+  + **尖锐、稀疏（大方差）**：意味着**概率高度集中在少数几个 Token 上**（比如某个位置权重是 0.8，其他都是 0.01）。这种分布的**方差很大，熵很小**。
++ 而在 32 维单头中，Softmax 的梯度往往更平滑，容易陷入“所有位置都关注一点”的平庸解。
+  + **平滑（小方差）**：意味着概率均匀分散在所有位置上（比如 10 个位置每个都是 0.1）。这种分布**接近均匀分布，方差很小，熵很大**。
+  +  Softmax 输出变成了一个方差极小的平滑分布，**模型退化成了一种简单的“全局平均池化”**。
++ 低维（8维）比高维（32维）更容易产生“大方差”
+
+---
+
+**总结**：
++ **平庸解（Meaningless Solution）**：如果只用一个 32 维的单头，模型容量太大，它倾向于用所有的维度去“平均”和“稀释”信息，导致注意力机制失去了“动态路由”和“稀疏选择”的核心优势，变成了毫无意义的加权平均。
++ **结构化分解与归纳偏置（Inductive Bias）**：MHA 将 32 维拆分成 4 个 8 维的头，这不仅仅是降维，更是引入了一种强烈的**归纳偏置（即先验假设）**。它强制假设：**“不同的特征子空间应该独立地去寻找最显著的、稀疏的注意力模式”**。
+   + 通过降维（8维），限制了单个头的容量，**强迫**每个头只能去捕捉最尖锐、方差最大的特征。
+   + 同时，多个头并行工作，使得模型能够在不同的子空间（如语法、语义、指代等）分别形成高方差的尖锐峰值，最后拼接起来，既保证了局部信号的清晰，又维持了全局表达的丰富性。
++ **MHA 通过降维（32->8），利用低维空间更容易放大特征差异的特性，迫使 Softmax 输出方差更大（更尖锐）的分布；这种大方差分布让梯度在反向传播时能够精准聚焦，从而避免了高维单头带来的梯度弥散和过度平滑（平庸解），使得模型的优化过程更加高效和友好。**
+
+---
+
+回到那个自注意力机制的公式： 
+
+$$softmax(\frac{QK^T}{\sqrt{d_k}}V)$$
+
+如下图，这里假设$QK^T$的结果就是下面的$x$， 是(0,1)之间的一个数字，
+
+则上式其实就可以简化为： $y = a x$, 这里$a$就是斜率， 
+
+对于不同的`head_size`, 这里的$a$分别为： $a = \frac{1}{\sqrt{8}}$和$a = \frac{1}{\sqrt{32}}$, 很明显，分母越大，整个分数越小，所以$\sqrt{32} >> \sqrt{8}$
+
+所以 **`head_size`大的，对应的函数的斜率反而小，所以方差也小~**
+
+![](img/20260831100854.png)
 
 从下面的实验中确实可以看出，缩放因子会影响softmax结果的梯度，缩放因子大的，softmax的方差反而小
 ```bash
@@ -156,7 +185,7 @@ print(f"d_k = 32, big_softmax.var = {big_softmax.var()}\nd_k = 8, small_softmax.
 # d_k = 8, var = 0.24385814368724823
 # d_k = 32, big_softmax.var = 0.0007161822286434472
 # d_k = 8, small_softmax.var = 0.0033988922368735075
-
+# ✅✅✅✅✅✅✅   低维（8维）比高维（32维）更容易产生“大方差”
 
 # d_k越大，则对点积结果的缩放结果越大， 压缩的程度越高
 In [12]: 1*32**(-0.5)
@@ -270,5 +299,58 @@ for p in parameters:
 |K,Q,V线性层维度(W.shape)|$W^K=(32,32)$,<br/>$W^Q=(32,32)$,<br/>$W^V=(32,32)$|$W^{K_1}=(32,8), W^{K_2}=(32,8), W^{K_3}=(32,8), W^{K_4}=(32,8)$,<br/>$W^{Q_1}=(32,8), W^{Q_2}=(32,8), W^{Q_3}=(32,8), W^{Q_4}=(32,8)$,<br/>$W^{V_1}=(32,8), W^{V_2}=(32,8), W^{V_3}=(32,8), W^{V_4}=(32,8)$
 |scaled尺寸| $softmax(\frac{QK^T}{\sqrt{32}})V$<br/> 单头的缩放因子很小，会导致点积结果的方差较大，输入到 Softmax 后，极易进入饱和区（即某个位置的概率接近1，其他接近0）。在饱和区，Softmax 的梯度会趋近于0，导致梯度消失。|$(softmax(\frac{Q_1K_1^T}{\sqrt{8}})V_1, softmax(\frac{Q_2K_2^T}{\sqrt{8}})V_2, softmax(\frac{Q_3K_3^T}{\sqrt{8}})V_3, softmax(\frac{Q_4K_4^T}{\sqrt{8}})V_4$<br/>多头由于缩放因子更大，使得 Softmax 前的 logits 分布更平滑，不容易饱和，从而保证了更健康的梯度流|
 |softmax计算差异|单头的softmax归一化的时候需要处理32个数字，是`32个数字来瓜分1`，<br/>最极端的情况，**如果这32维是个one-hot向量，则单头只吸收了一个token的信息**<br/>32维度统一算softmax，肯定会导致次大的，或者次次大的，不会分配那么多注意力，<br/>而如果放在多头里，次大则会变成多头里单个head的最大，就会获得充分的注意力|多头的softmax归一化的时候只需要处理8个数字，是`8个数字瓜分1`<br/>最极端的情况，**如果这8维是个one-hot向量, 多头其实还是吸收了4个token的信息**|
-|初始化差异|虽然`nn.Linear`都是 均匀分布，但是总归会有那么一些些差异，可以引入一些随机性，单头的随机性肯定要小于多头|
+|初始化差异|虽然`nn.Linear`都是 均匀分布，但是总归会有那么一些些差异，可以引入一些随机性，**单头的随机性肯定要小于多头**|
 |梯度更新差异|只有3个可更新的参数，W里的所有32*32个元素是一起更新的，根据[## 1.5 梯度下降的局限性（损失函数对每个参数分量的偏导减小的方向，不一定是全局减小的方向）](#15-梯度下降的局限性损失函数对每个参数分量的偏导减小的方向不一定是全局减小的方向), 一起更新的参数越多，参数之间耦合的情况越大|
+
+
+
+# 4. skip-connection的“零初始化” (Zero-Initialization)
+关键参考：
++ skip connection, 2016年 [Identity Mappings in Deep Residual Networks](https://arxiv.org/pdf/1603.05027)
++ Resnet, 2015年 [Deep Residual Learning for Image Recognition](https://arxiv.org/pdf/1512.03385)
++ [torchvision/models/resnet.py # zero_init_residual](https://github.com/pytorch/vision/blob/main/torchvision/models/resnet.py#L218)
+  + [Accurate, Large Minibatch SGD:Training ImageNet in 1 Hour](https://arxiv.org/pdf/1706.02677)
+
+```python
+# https://github.com/pytorch/vision/blob/main/torchvision/models/resnet.py#L218  
+# 关键代码
+
+if zero_init_residual:
+   for m in self.modules():
+         if isinstance(m, Bottleneck) and m.bn3.weight is not None:
+            nn.init.constant_(m.bn3.weight, 0)  # type: ignore[arg-type]
+         elif isinstance(m, BasicBlock) and m.bn2.weight is not None:
+            nn.init.constant_(m.bn2.weight, 0)  # type: ignore[arg-type]
+
+```
+
+# 5. transformer里的残差连接
+`transformer`里的`skip-connection`, 详见：
++ [torch/nn/modules/transformer.py # TransformerDecoderLayer](https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/transformer.py#L985)
++ [On Layer Normalization in the Transformer Architecture](https://arxiv.org/pdf/2002.04745v1)
++ 原始的transformer论文里给的实现链接，是tensorflow写的，实现有点复杂
+  + [tensor2tensor/models/transformer.py](https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/models/transformer.py#L186)
+  + [tensor2tensor/layers/transformer_layers.py](https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/layers/transformer_layers.py#L138)
+  + [tensor2tensor/layers/transformer_memory.py](https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/layers/transformer_memory.py)
+
+
+
+# X. transformer类网络和具体实现
++ 老师的实现其实是位于： <https://github.com/karpathy/ng-video-lecture/blob/master/gpt.py>
++ 原始的transformer网络结构可以参考：<https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/transformer.py>
+  + 进一步，在`from .activation import MultiheadAttention`: [torch/nn/modules/activation.py#MultiheadAttention](https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/activation.py#L1469)
+  + 进一步，在[torch/nn/modules/activation.py # F.multi_head_attention_forward](https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/activation.py#L1469)， 或者[torch/nn/modules/activation.py# torch._native_multi_head_attention](https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/activation.py#L1434)
+  + 进一步： [torch/nn/functional.py # multi_head_attention_forward](https://github.com/pytorch/pytorch/blob/v1.9.0/torch/nn/functional.py#L4836)
++ 上面最新的`transformer.py`实现太复杂了，加了很多冗余的功能，
+  + 翻历史，找到最初版本的transformer实现，原始，捡漏，主线明确：
+  + [756a20de9 分支 torch/nn/modules/transformer.py](https://github.com/pytorch/pytorch/blob/756a20de932f5ee99b66df862fe452d31af02e76/torch/nn/modules/transformer.py)
+  + [756a20de9 分支 torch/nn/modules/activation.py](https://github.com/pytorch/pytorch/blob/756a20de932f5ee99b66df862fe452d31af02e76/torch/nn/modules/activation.py#L775)
+  + [756a20de9 分支 torch/nn/functional.py](https://github.com/pytorch/pytorch/blob/756a20de932f5ee99b66df862fe452d31af02e76/torch/nn/functional.py#L3094)
++ 如果想在transformers库里看其他网络的相关实现：
+   + Encoder最经典的实现是 BERT (BertSelfAttention): 
+     + https://github.com/huggingface/transformers/blob/main/src/transformers/models/bert/modeling_bert.py#L139
+   + 带 Mask 的 Decoder最经典的实现是 GPT-2 (GPT2Attention): 
+     + https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/modeling_gpt2.py#L75
+   + 同时包含 Encoder 和 Decoder，并且两者通过 Cross-Attention 交互的完整原始架构，最贴近的参考是 BART 或 T5
+      + https://github.com/huggingface/transformers/blob/main/src/transformers/models/bart/modeling_bart.py#L143
+      + https://github.com/huggingface/transformers/blob/main/src/transformers/models/t5/modeling_t5.py#L176
