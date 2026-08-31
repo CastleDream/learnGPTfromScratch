@@ -111,7 +111,10 @@ class MultiHeadAttention(nn.Module):
         # 即：(B, T, num_heads*head_size)
         out = torch.cat([h(x) for h in self.heads], dim = -1)
         out = self.proj(out)
-        # 这里加的这个线性层是为了让多头信息更好的融合，多头直出的结果是拼接的，并没有进行计算融合
+        # 这里加的这个线性层的原因：
+        # 1. 是为了让多头信息更好的融合，多头直出的结果是拼接的，并没有进行计算融合
+        # 2. 保证输出的维度，能和残差时的原始输入维度对齐，这里看起来都是n_embed→n_embed，是以为这里给的例子比较特殊，实际上q,k,v的维度大概率是不同的
+        # https://github.com/pytorch/pytorch/blob/756a20de932f5ee99b66df862fe452d31af02e76/torch/nn/functional.py#L3150
         return out
 
 
@@ -126,8 +129,16 @@ class FeedForward(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(n_embed, n_embed),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.Linear(n_embed, n_embed)
         )
+        # 这里第二个线性层就可以将结果映射回残差路径中
+        # https://github.com/pytorch/pytorch/blob/756a20de932f5ee99b66df862fe452d31af02e76/torch/nn/modules/transformer.py#L217
+        # # Implementation of Feedforward model
+        # self.linear1 = Linear(d_model, dim_feedforward)
+        # self.dropout = Dropout(dropout)
+        # self.linear2 = Linear(dim_feedforward, d_model)
+        # src2 = self.linear2(self.dropout(F.relu(self.linear1(src))))
     
     def forward(self,x):
         return self.net(x)
