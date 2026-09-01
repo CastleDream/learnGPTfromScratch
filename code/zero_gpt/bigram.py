@@ -16,6 +16,9 @@ learning_rate = 1e-3  # 自注意力机制无法接受很高的学习率，所�
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
 n_embed = 32  # embedding维度
+n_layer = 4   # 解码器部分block的个数
+n_head = 4    # 多头自注意力机制的头数
+droupout = 0.1  
 
 # 随机数种子固定
 torch.manual_seed(1337)
@@ -80,6 +83,8 @@ class Head(nn.Module):
         self.value = nn.Linear(n_embed, head_size, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
         # tril不是这个nn.Module的参数，因此按照pytorch的规定，就以缓冲的形式存在了
+
+        self.dropout = nn.Dropout(droupout) 
     
     def forward(self, x):
         B, T, C = x.shape
@@ -89,13 +94,13 @@ class Head(nn.Module):
         weight = (q@k.transpose(-2,-1))*self.head_size**(-0.5)   # q@k^T → (B,T,T) 需要乘以 head_size**(-0.5)
         weight = weight.masked_fill(self.tril[:T,:T]==0, float('-inf'))
         weight = F.softmax(weight, dim = -1)
+        weight = self.dropout(weight)    # 也可以在计算亲合度的权重之后，应用dropout，这样可以随机阻止某些节点间的信息传递
         out = weight@v        # (B,T,T)@(B,T,head_size) → (B,T,head_size)
         return out
-
+        # Dropout只在训练过程中发挥作用，测试/推理阶段就不会发挥作用了，测试阶段h = Dropout(h)
 
 class MultiHeadAttention(nn.Module):
     """
-
     参考：
     torch/nn/modules/activation.py # MultiheadAttention
     https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/activation.py#L1090
@@ -104,13 +109,14 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
         self.proj = nn.Linear(n_embed, n_embed)
+        self.dropout = nn.Dropout(droupout) 
     
     def forward(self, x):
         # 多头自注意力机制，本质上就是让多个自注意力机制头并行运行，再把结果拼接到一起
         # 根据上面的Heads可知 h(x).shape = (B,T,head_size) 所以最后在head_size上拼接，刚好就可以得到 num_heads*head_size的维度
         # 即：(B, T, num_heads*head_size)
         out = torch.cat([h(x) for h in self.heads], dim = -1)
-        out = self.proj(out)
+        out = self.dropout(self.proj(out))
         # 这里加的这个线性层的原因：
         # 1. 是为了让多头信息更好的融合，多头直出的结果是拼接的，并没有进行计算融合
         # 2. 保证输出的维度，能和残差时的原始输入维度对齐，这里看起来都是n_embed→n_embed，是以为这里给的例子比较特殊，实际上q,k,v的维度大概率是不同的
@@ -128,36 +134,54 @@ class FeedForward(nn.Module):
     def __init__(self, n_embed):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(n_embed, n_embed),
+            nn.Linear(n_embed, 4*n_embed),
             nn.ReLU(),
-            nn.Linear(n_embed, n_embed)
+            nn.Linear(4*n_embed, n_embed),
+            nn.Dropout(droupout)
         )
+        # Dropout也可以在信息回流到残差连接前加入
+
+        # 原始transformer论文中， 前馈层的输入和输出是512，中间层的维度是2048， 也就是4倍的输入维度
         # 这里第二个线性层就可以将结果映射回残差路径中
         # https://github.com/pytorch/pytorch/blob/756a20de932f5ee99b66df862fe452d31af02e76/torch/nn/modules/transformer.py#L217
         # # Implementation of Feedforward model
-        # self.linear1 = Linear(d_model, dim_feedforward)
+        # self.linear1 = Linear(d_model, dim_feedforward = 2048)
         # self.dropout = Dropout(dropout)
-        # self.linear2 = Linear(dim_feedforward, d_model)
-        # src2 = self.linear2(self.dropout(F.relu(self.linear1(src))))
+        # self.linear2 = Linear(dim_feedforward = 2048, d_model)
+        # src2 = self.linear2(self.dropout(F.relu(self.linear1(src))))  # 这里的Dropout加的位置不一样
     
     def forward(self,x):
         return self.net(x)
 
 class Block(nn.Module):
     """构建 自注意力机制+前馈层的块，方便之后重复多次调用
+    与原始Transformer论文实现不同，这里只有带遮罩的多头注意力机制和前馈层，没有交叉注意力机制那个部分
+    因此，也只有两个 Add&Norm层，一个用于自注意力机制，一个用于前馈层
     """
     def __init__(self, n_embed, n_head):
         super().__init__()
         head_size = n_embed//n_head
         self.sa = MultiHeadAttention(n_head, head_size)
         self.ffwd = FeedForward(n_embed)
+        self.ln1 = nn.LayerNorm(n_embed)  # 对n_embed进行mean和var计算，即: 对于batch/sequence中每个token的embedding维度进行归一化
+        self.ln2 = nn.LayerNorm(n_embed)
     
     def forward(self, x):
         # x = self.sa(x)     # 先token之间的信息交互
         # x = self.ffwd(x)   # 再单个token信息整理/计算
         # 添加残差连接，关于为什么是分开加了两次，详见：https://arxiv.org/pdf/2002.04745v1 里的Fig.1
-        x = x + self.sa(x)   
-        x = x + self.ffwd(x)   
+        x = x + self.sa(self.ln1(x))   
+        x = x + self.ffwd(self.ln2(x))   
+        # Transformer原始的论文里，add和norm操作是发生在自注意力机制之后
+        # 但是现如今更常见的做法是，在变换操作之前应用层归一化，这种被称为 pre-norm formulation 前置归一化
+        # 注意，进入Block的x的维度是: (B,T,n_embed)  所以输出也是 (B,T,n_embed)
+        # 所以这里的LayerNorm把batch和time维度其实都发挥的是2d时候的batch维度的作用，归一化的维度是最后一个维度，即n_embed维度
+        # 不同于 LayerNorm的pytroch实现页面的例子
+        # Image Example
+        # N, C, H, W = 20, 5, 10, 10
+        # layer_norm = nn.LayerNorm([C, H, W])
+        # For example, if normalized_shape is (3, 5) (a 2-dimensional shape), the mean and standard-deviation are computed over the last 2 dimensions of the input (i.e. input.mean((-2, -1))).
+        # LN操作类似一种逐token的操作，反正就是每个token内部的32维嵌入会成为一个高斯分布，不过由于LN中有可训练的γ和β参数，所以最终的输出不一定是标准正态分布
         return x
 
 
@@ -185,13 +209,19 @@ class BigramLanguageModel(nn.Module):
         # self.ffwd = FeedForward(n_embed)
 
         # 用block代替上面单个组件
-        self.blocks = nn.Sequential(
-            Block(n_embed, 4),
-            Block(n_embed, 4),
-            Block(n_embed, 4),
-        )
+        # self.blocks = nn.Sequential(
+        #     Block(n_embed, 4),
+        #     Block(n_embed, 4),
+        #     Block(n_embed, 4),
+        #     nn.LayerNorm(n_embed)  
+        # )
+        # 一般在Transformer的最后，即最终线性层映射到词表之前，也会添加一个归一化层（Block里用的是pre-norm）
+        # https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/transformer.py#L658
 
-    
+        # 方便扩大网络规模，改为以下初始化形式
+        self.blocks = nn.Sequential(*[Block(n_embed, n_head = n_head) for _ in range(n_layer)])
+        self.ln_f = nn.LayerNorm(n_embed)  # 放在Transformer的最后的那个norm  final layer norm
+
     def forward(self, idx, targets= None):
         B,T = idx.shape # batch size, time steps/block size
         # logits = self.token_embedding_table(idx)
@@ -305,7 +335,13 @@ if __name__ == "__main__":
 # 多头自注意力 + feedforward         2.206  可能有一些随机偏差
 #                                     ↓
 # 多个block实现的sa+ffwd             2.289  由于网络开始变得很深，但是数据又比较少，就很容易出现优化上的问题，因此考虑加入skip connection(或者称为残差连接)
-
+#                                     ↓    残差连接是transformer里用的第一个对优化神经网络非常有帮助的技术
+# 多个block实现的sa+ffwd + 残差连接   2.074  优化效果十分显著，推理生成的结果已经出现了一些连贯的英语单词表达 同时可以看到，出现了轻微的过拟合现象(训练损失小于验证损失了)，
+#                                     ↓    第二个对于优化神经网络非常有帮助的技术就是归一化，比如：Layer Norm
+# 多block(sa+ffwd+残差连接+LN)       2.0838  似乎没啥影响，依然有些过拟合
+#                                     ↓    
+# 扩大规模
+                        
 
 # 不加自注意力机制的结果
 # max_iters = 3000
@@ -359,3 +395,25 @@ if __name__ == "__main__":
 # step 4500: train loss 2.3278, val loss 2.3323
 # step 4800: train loss 2.3057, val loss 2.3124
 # 2.289051055908203
+
+# 多个block实现的sa+ffwd + 残差连接
+# step 0: train loss 4.6306, val loss 4.6199
+# step 300: train loss 2.4861, val loss 2.4973
+# step 600: train loss 2.3606, val loss 2.3613
+# step 900: train loss 2.2759, val loss 2.2937
+# ...
+# step 4200: train loss 2.0336, val loss 2.1184
+# step 4500: train loss 2.0176, val loss 2.0977
+# step 4800: train loss 2.0087, val loss 2.0949
+# 2.0740463733673096
+
+# 多block(sa+ffwd+残差连接+LN) 
+# step 0: train loss 4.5336, val loss 4.5261
+# step 300: train loss 2.4917, val loss 2.5021
+# step 600: train loss 2.3667, val loss 2.3664
+# step 900: train loss 2.2788, val loss 2.2960
+# ...
+# step 4200: train loss 2.0297, val loss 2.1117
+# step 4500: train loss 2.0147, val loss 2.0959
+# step 4800: train loss 2.0050, val loss 2.0894
+# 2.0838706493377686

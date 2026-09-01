@@ -8,6 +8,7 @@
 - [3. 相同输出维度的单头和多头性能差异](#3-相同输出维度的单头和多头性能差异)
 - [4. skip-connection的“零初始化” (Zero-Initialization)](#4-skip-connection的零初始化-zero-initialization)
 - [5. transformer里的残差连接](#5-transformer里的残差连接)
+- [5. transformer里的layer norm](#5-transformer里的layer-norm)
 - [X. transformer类网络和具体实现](#x-transformer类网络和具体实现)
 
 # 1. 张量的梯度理解(pytorch中每个张量单个元素的grad意味着为什么)
@@ -333,12 +334,16 @@ if zero_init_residual:
   + [tensor2tensor/layers/transformer_layers.py](https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/layers/transformer_layers.py#L138)
   + [tensor2tensor/layers/transformer_memory.py](https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/layers/transformer_memory.py)
 
-
+# 5. transformer里的layer norm
+参考链接：
++ <https://docs.pytorch.org/docs/2.13/generated/torch.nn.LayerNorm.html>
++ https://arxiv.org/pdf/1607.06450
++ 其实和以前实现的BatchNorm很类似
 
 # X. transformer类网络和具体实现
 + 老师的实现其实是位于： <https://github.com/karpathy/ng-video-lecture/blob/master/gpt.py>
 + 原始的transformer网络结构可以参考：<https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/transformer.py>
-  + 进一步，在`from .activation import MultiheadAttention`: [torch/nn/modules/activation.py#MultiheadAttention](https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/activation.py#L1469)
+  + 进一步，在`from .activation import MultiheadAttention`: [torch/nn/modules/activation.py#MultiheadAttention](https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/activation.py#L1090)
   + 进一步，在[torch/nn/modules/activation.py # F.multi_head_attention_forward](https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/activation.py#L1469)， 或者[torch/nn/modules/activation.py# torch._native_multi_head_attention](https://github.com/pytorch/pytorch/blob/main/torch/nn/modules/activation.py#L1434)
   + 进一步： [torch/nn/functional.py # multi_head_attention_forward](https://github.com/pytorch/pytorch/blob/v1.9.0/torch/nn/functional.py#L4836)
 + 上面最新的`transformer.py`实现太复杂了，加了很多冗余的功能，

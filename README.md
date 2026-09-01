@@ -66,7 +66,7 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 |P4: 构建 makemore 第三部分：激活函数与梯度，批量归一化(part 3)|2026.7.2~7.16|- 激活函数带来的dead neuron问题<br/>- 两个正态分布相乘结果的期望和方差计算<br/>- 归一化:<br/>1. **输入端**（数据预处理）：Standardization / Normalization。处理的是原始数据（如图像像素、表格特征）, 常用的归一化包括：Min-Max 归一化、Z-score 标准化<br/>2. **隐藏层**（网络内部归一化）：BN、LN、IN、GN、RMSNorm 等。处理的是网络中间层的激活值（Activations / Hidden states）。<br/>3. **权重端**（参数归一化）：Weight Normalization。对神经网络的权重矩阵进行归一化，常用于 RNN 或某些生成模型。<br/>4. **输出端**（概率归一化）：Softmax、Sigmoid。将输出 logits 转化为概率分布（和为1或在0-1之间），本质上也是一种归一化。<br/>- 多层感知机(输入层，单个隐藏层，输出层)<br/>- BN详解<br/>- BN作用的卷积层/线性层的偏置梯度为0的代码, 前向/反向过程中偏置无效的原理推导<br/>- resnet里BN的实际使用和pytorch中BN层的参数说明<br/>---------------<br/>- 反向传播扩展和 3Blue1Brown视频<br/>- tanh的增益为什么是 5/3<br/>- 网络不同层的`权重更新量`:`权重值`(绘图判断网络训练效率/学习率设置科学性),科学诊断网络初始化参数设置的合理性|
 |P5: 构建 makemore 第四部分：成为反向传播高手| 2026.7.16~7.30|- 多分支节点的梯度=多分支的梯度的和(多元复合函数的全微分（链式法则）)<br/>- **pytorch张量中每个元素都有一个梯度值以及学习率缩放不影响梯度方向的正确理解**<br/>- 数学中，描述函数时提到的“一维、二维、n维”指的是什么<br/>- 矩阵乘法梯度计算<br/>- BN训练时用的是有偏估计，推理时用的是无偏估计(bessel correction 贝塞尔纠正)<br/> - 估计量的有偏/无偏定义<br/>- pytorch var 和 Batchnorm1d对var计算的规定 <br/>- **交叉熵损失求导过程推导**<br/>- 交叉熵损失的梯度和为0的性质<br/>- logit_maxes的值不影响最终结果(梯度为0)和 **Log-Sum-Exp**, 应用`Log-Sum-Exp-trick`来进行交叉熵损失的前向计算和反向传播<br/>- **计算图求导的过程其实就是在计算全导数**<br/>---------------<br/>- BN反向传播的求导过程 **基于全导数求导** 和 **计算图求导** 两种方案对比, 全导数(数学方式)求导 vs 计算图(程序可模块化的分步)求导 <br/> -[CS231n Spring 2019 Assignment 2—Batch Normalization](https://blog.csdn.net/laizi_laizi/article/details/102175105) |
 |P6: 构建 makemore 第五部分：构建 WaveNet|2026.7.31~8.6|- pytorch Sequential容器类<br/>- BN层修改训练/推理模式（单个样本计算方差报错）<br/>- Image Pyramids(图像金字塔)<br/>- dilated causal convolutional layers(扩张因果卷积(空洞卷积 + 因果约束))<br/>- `多维数组维度的意义`(（4,4,10）只有10包括的维度有数据，其余其实都只是截断/分组的标识); 以及 `BN面对非二维输入`|
-|P7: 从零开始，用代码构建 GPT|2026.8.6~ |- nn.Embedding层随机初始化<br/>- optimizer.zero_grad(set_to_none = True),优化器设置梯度为0或者None的区别<br/>- 自注意力机制中的数学技巧(不同时间步求均值改为矩阵乘法, 为什么B批次维度会放在第一位, 多维矩阵计算)<br/>- **自注意力机制key,query的合理性(符合语言模型的本质)**<br/>- **自注意力机制value的合理性**(有向图中节点间的信息传递机制)<br/>- 自注意力机制和位置嵌入<br/>- 缩放注意力机制的合理性, **kq乘法方差计算目的**<br/>- pytorch的`forward函数`和python的`__call__()`的区别<br/> - (md文档中)register_buffer() vs register_parameter|
+|P7: 从零开始，用代码构建 GPT|2026.8.6~ |- nn.Embedding层随机初始化<br/>- optimizer.zero_grad(set_to_none = True),优化器设置梯度为0或者None的区别<br/>- 自注意力机制中的数学技巧(不同时间步求均值改为矩阵乘法, 为什么B批次维度会放在第一位, 多维矩阵计算)<br/>- **自注意力机制key,query的合理性(符合语言模型的本质)**<br/>- **自注意力机制value的合理性**(有向图中节点间的信息传递机制)<br/>- 自注意力机制和位置嵌入<br/>- 缩放注意力机制的合理性, **kq乘法方差计算目的**<br/>- pytorch的`forward函数`和python的`__call__()`的区别<br/> - (md文档中)register_buffer() vs register_parameter<br/>- (md文档中)**相同输出维度，多头效果优于单头**<br/>- (md文档中) transformer的残差连接 <br/>- **LayerNorm实现，BatchNorm和LayerNorm就差个dim**|
 |P8: GPT现状(BRK216HFS)|
 |P9: 构建 GPT 分词器|
 |P10: 复现 GPT-2 (124M 参数)|
@@ -79,9 +79,11 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 + LSTM, following Graves et al. 2014 [Generating Sequences With Recurrent Neural Networks](https://arxiv.org/pdf/1308.0850)
 + GRU, following Kyunghyun Cho et al. 2014 [On the Properties of Neural Machine Translation: Encoder–Decoder Approaches](https://arxiv.org/pdf/1409.1259)
 + Transformer, following Vaswani et al. 2017 [Attention Is All You Need](https://arxiv.org/pdf/1706.03762)
-+ skip connection, 2016年 [Identity Mappings in Deep Residual Networks](https://arxiv.org/pdf/1603.05027)
 + Resnet, 2015年 [Deep Residual Learning for Image Recognition](https://arxiv.org/pdf/1512.03385)
+  + skip connection, 2016年 [Identity Mappings in Deep Residual Networks](https://arxiv.org/pdf/1603.05027)
   + [Residual blocks — Building blocks of ResNet](https://medium.com/data-science/residual-blocks-building-blocks-of-resnet-fd90ca15d6ec)
+  + [Accurate, Large Minibatch SGD:Training ImageNet in 1 Hour](https://arxiv.org/pdf/1706.02677)
++ [Dropout: A Simple Way to Prevent Neural Networks from Overfitting](http://www.jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf?utm_content=buffer79b4)
 
 ----
 
