@@ -84,6 +84,7 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
   + [Residual blocks — Building blocks of ResNet](https://medium.com/data-science/residual-blocks-building-blocks-of-resnet-fd90ca15d6ec)
   + [Accurate, Large Minibatch SGD:Training ImageNet in 1 Hour](https://arxiv.org/pdf/1706.02677)
 + [Dropout: A Simple Way to Prevent Neural Networks from Overfitting](http://www.jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf?utm_content=buffer79b4)
++ [Language Models are Few-Shot Learners](https://arxiv.org/pdf/2005.14165)
 
 ----
 

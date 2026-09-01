@@ -8,17 +8,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # 超参设置
-batch_size = 32
-block_size = 8
+batch_size = 64
+block_size = 256
 max_iters = 5000
 eval_interval = 300
-learning_rate = 1e-3  # 自注意力机制无法接受很高的学习率，所以不能是1e-2
+learning_rate = 3e-4  # 自注意力机制无法接受很高的学习率，所以不能是1e-2
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
-n_embed = 32  # embedding维度
-n_layer = 4   # 解码器部分block的个数
-n_head = 4    # 多头自注意力机制的头数
-droupout = 0.1  
+n_embed = 384  # embedding维度
+n_layer = 6   # 解码器部分block的个数   384//6=64 即：每个头的head_size=64
+n_head = 6    # 多头自注意力机制的头数
+droupout = 0.2  
 
 # 随机数种子固定
 torch.manual_seed(1337)
@@ -340,7 +340,8 @@ if __name__ == "__main__":
 #                                     ↓    第二个对于优化神经网络非常有帮助的技术就是归一化，比如：Layer Norm
 # 多block(sa+ffwd+残差连接+LN)       2.0838  似乎没啥影响，依然有些过拟合
 #                                     ↓    
-# 扩大规模
+# 扩大规模+Dropout                          在A100上运行了15分钟，在RTX 4060 laptop 8G的GPU上，显存占用 4.0/8GB 运行时间(3~4min 300step，一共 5000step) 16:20~ 训练50min左右
+
                         
 
 # 不加自注意力机制的结果
@@ -417,3 +418,5 @@ if __name__ == "__main__":
 # step 4500: train loss 2.0147, val loss 2.0959
 # step 4800: train loss 2.0050, val loss 2.0894
 # 2.0838706493377686
+
+# 扩大规模+Dropout
