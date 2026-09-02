@@ -67,7 +67,7 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 |P5: 构建 makemore 第四部分：成为反向传播高手| 2026.7.16~7.30|- 多分支节点的梯度=多分支的梯度的和(多元复合函数的全微分（链式法则）)<br/>- **pytorch张量中每个元素都有一个梯度值以及学习率缩放不影响梯度方向的正确理解**<br/>- 数学中，描述函数时提到的“一维、二维、n维”指的是什么<br/>- 矩阵乘法梯度计算<br/>- BN训练时用的是有偏估计，推理时用的是无偏估计(bessel correction 贝塞尔纠正)<br/> - 估计量的有偏/无偏定义<br/>- pytorch var 和 Batchnorm1d对var计算的规定 <br/>- **交叉熵损失求导过程推导**<br/>- 交叉熵损失的梯度和为0的性质<br/>- logit_maxes的值不影响最终结果(梯度为0)和 **Log-Sum-Exp**, 应用`Log-Sum-Exp-trick`来进行交叉熵损失的前向计算和反向传播<br/>- **计算图求导的过程其实就是在计算全导数**<br/>---------------<br/>- BN反向传播的求导过程 **基于全导数求导** 和 **计算图求导** 两种方案对比, 全导数(数学方式)求导 vs 计算图(程序可模块化的分步)求导 <br/> -[CS231n Spring 2019 Assignment 2—Batch Normalization](https://blog.csdn.net/laizi_laizi/article/details/102175105) |
 |P6: 构建 makemore 第五部分：构建 WaveNet|2026.7.31~8.6|- pytorch Sequential容器类<br/>- BN层修改训练/推理模式（单个样本计算方差报错）<br/>- Image Pyramids(图像金字塔)<br/>- dilated causal convolutional layers(扩张因果卷积(空洞卷积 + 因果约束))<br/>- `多维数组维度的意义`(（4,4,10）只有10包括的维度有数据，其余其实都只是截断/分组的标识); 以及 `BN面对非二维输入`|
 |P7: 从零开始，用代码构建 GPT|2026.8.6~ 9.1|- nn.Embedding层随机初始化<br/>- optimizer.zero_grad(set_to_none = True),优化器设置梯度为0或者None的区别<br/>- 自注意力机制中的数学技巧(不同时间步求均值改为矩阵乘法, 为什么B批次维度会放在第一位, 多维矩阵计算)<br/>- **自注意力机制key,query的合理性(符合语言模型的本质)**<br/>- **自注意力机制value的合理性**(有向图中节点间的信息传递机制)<br/>- 自注意力机制和位置嵌入<br/>- 缩放注意力机制的合理性, **kq乘法方差计算目的**<br/>- pytorch的`forward函数`和python的`__call__()`的区别<br/> - (md文档中)register_buffer() vs register_parameter<br/>- (md文档中)**相同输出维度，多头效果优于单头**<br/>- (md文档中) transformer的残差连接 <br/>- **LayerNorm实现，BatchNorm和LayerNorm就差个dim**|
-|P8: GPT现状(BRK216HFS)|
+|P8: GPT现状(BRK216HFS)| 2026.9.2|大会发言，记录见[md/8_GPT现状BRK216HFS.md](./md/8_GPT现状BRK216HFS.md)
 |P9: 构建 GPT 分词器|
 |P10: 复现 GPT-2 (124M 参数)|
 
