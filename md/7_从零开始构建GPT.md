@@ -1,6 +1,7 @@
 - [P7: 从零开始，用代码构建 GPT](#p7-从零开始用代码构建-gpt)
   - [链接](#链接)
   - [关键内容](#关键内容)
+  - [训练的demo vs GPT3](#训练的demo-vs-gpt3)
 
 # P7: 从零开始，用代码构建 GPT
 ## 链接
@@ -27,6 +28,17 @@ Github项目：
 完整的训练过程位于： [karpathy/nanoGPT](https://github.com/karpathy/nanogpt)
 
 Bigram示例代码位于： [karpathy/ng-video-lecture](https://github.com/karpathy/ng-video-lecture)
++ https://github.com/karpathy/ng-video-lecture/blob/master/bigram.py
++ 老师课上的v2版本对应于： https://github.com/karpathy/ng-video-lecture/blob/master/gpt.py
 
 这节课用到的notebook地址(Google Colab): https://colab.research.google.com/drive/1JMLa53HDuA-i7ZBmqV7ZnA3c_fvtXnx-?usp=sharing
 
+## 训练的demo vs GPT3
+在[code\zero_gpt\bigram.py](../code/zero_gpt/bigram.py)中训练的模型
++ 模型参数量为: 10.79 M 也就是10 million， 即10百万，1000w参数量 
++ 总 token 数量: 338025，即训练语料是30w的tokens数量
++ 在一个`30w tokens`(用GPT3的分词器)的语料上训练了一个`1000w`参数的模型
+
+对比GPT3，根据[Language Models are Few-Shot Learners.no_watermark.zh-CN.dual](../paper/Language%20Models%20are%20Few-Shot%20Learners.no_watermark.zh-CN.dual.pdf)
+
+<img src="img/20260902160500.png" width="60%">

@@ -272,6 +272,10 @@ class BigramLanguageModel(nn.Module):
 
 
 def train_bigram():
+    import time
+    start_time = time.time()
+    from datetime import datetime
+    print(f"start_time is {datetime.fromtimestamp(start_time).strftime('%H:%M:%S')}")
     model = BigramLanguageModel()
     m = model.to(device)
     # print(f"model is m? ", model is m )  # model is m?  True     
@@ -292,6 +296,10 @@ def train_bigram():
         loss.backward()
         optimizer.step()
     print(loss.item())
+    
+    end_time = time.time()
+    print(f"end time is {datetime.fromtimestamp(end_time).strftime('%H:%M:%S')}")
+    print(f"训练总耗时: {end_time - start_time:.2f} 秒")
 
     context = torch.zeros((1,1), dtype=torch.long, device=device)
     print(decode(m.generate(context, max_new_token=500)[0].tolist()))
@@ -319,10 +327,42 @@ def plot_head_size_diff():
     plt.show()
     
 
+def get_other_info():
+    """
+    1. 模型参数量
+    2. 这里的莎士比亚语料对应到GPT的分词器是多少tokens
+    """
+    # 1. 模型参数量
+    model = BigramLanguageModel()
+    m = model.to(device)
+    num_params = sum(p.numel() for p in m.parameters())/1e6
+    print(f"模型参数量为: {num_params:.2f} M")
+    # 2. 莎士比亚语料对应到GPT的分词器是多少tokens
+    import tiktoken
+    # 根据 https://github.com/openai/tiktoken
+    # https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
+    # 老师课上对比的是 GPT3，Language Models are Few-Shot Learners.pdf
+    encoding = tiktoken.get_encoding("r50k_base")
+    
+    #  如果input.txt 非常大（例如几百 MB），一次性 read() 可能会占用较多内存。这种情况下，可以分块读取并累加 token 数量
+    # total_tokens = 0
+    # with open("code/zero_gpt/input.txt", 'r', encoding='utf-8') as f:
+    #     for line in f:
+    #         total_tokens += len(encoding.encode(line))
+    
+    # 这里的input.txt只有1.06MB，所以直接read()也没问题
+    tokens = encoding.encode(text)
+    token_count = len(tokens)
+    print(f"总 token 数量: {token_count}")
+
 # python code/zero_gpt/bigram.py
 if __name__ == "__main__":
-    train_bigram()
+    # train_bigram()
     # plot_head_size_diff()
+    get_other_info()
+    # 模型参数量为: 10.79 M 也就是10 million， 即10百万，1000w参数量 
+    # 总 token 数量: 338025，即训练语料是30w的tokens数量
+    # 在一个30w tokens(用GPT3的分词器)的语料上训练了一个1000w参数的模型
 
 
 # 不加自注意力机制的结果              2.8591 
@@ -340,8 +380,9 @@ if __name__ == "__main__":
 #                                     ↓    第二个对于优化神经网络非常有帮助的技术就是归一化，比如：Layer Norm
 # 多block(sa+ffwd+残差连接+LN)       2.0838  似乎没啥影响，依然有些过拟合
 #                                     ↓    
-# 扩大规模+Dropout                          在A100上运行了15分钟，在RTX 4060 laptop 8G的GPU上，显存占用 4.0/8GB 运行时间(3~4min 300step，一共 5000step) 16:20~ 训练50min左右
+# 扩大规模+Dropout                   1.042  在A100上运行了15分钟，在RTX 4060 laptop 8G的GPU上，显存占用 4.0/8GB 运行时间(3~4min 300step，一共 5000step) 训练60min左右
 
+# 确实牛逼。。。
                         
 
 # 不加自注意力机制的结果
@@ -420,3 +461,31 @@ if __name__ == "__main__":
 # 2.0838706493377686
 
 # 扩大规模+Dropout
+# start_time is 09:18:13
+# step 0: train loss 4.5568, val loss 4.5604
+# step 300: train loss 1.9976, val loss 2.0776
+# step 600: train loss 1.6083, val loss 1.7843
+# step 900: train loss 1.4483, val loss 1.6604
+# ...
+# step 4200: train loss 0.9728, val loss 1.5774
+# step 4500: train loss 0.9386, val loss 1.5858
+# step 4800: train loss 0.9083, val loss 1.6166
+# 1.0423190593719482
+# end time is 10:18:53
+# 训练总耗时: 3640.12 秒 3640/60=60.666666666666664分钟 约为1小时4分钟
+
+# 输出结果：看起来已经很莎士比亚风格了
+# Plead not:
+# I hang in honest well already to sea,
+# When he hath fought it was butcher scramed to our
+# joys and slaughter out the second cold in.
+
+# ISABELLA:
+# It makes of resolve: always now
+# But since for her or best less and all, but we could,
+# My treason says treason. I'll, nor eleven ne'er sleep orably:
+# My mother saw with snate reall'd
+# With hot forth such ten-hounds to his elect.
+# Direct thy unto young cloudy branch;
+# And now 'twere for us be wack'd; almost discoffin'd,
+# Yy, being 'gainst yours, your
