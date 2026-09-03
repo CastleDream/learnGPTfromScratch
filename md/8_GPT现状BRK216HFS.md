@@ -2,7 +2,7 @@
   - [链接](#链接)
   - [关键内容](#关键内容)
 
-# P3: 构建 makemore 第二部分：多层感知机
+# P8: GPT现状BRK216HFS
 ## 链接
 B站视频链接：
 + [Andrej Karpathy【中英⚡从零构建 GPT（重制版）|Neural Networks: Zero to Hero】](https://www.bilibili.com/video/BV1mqrTBvEaf/?p=3&spm_id_from=333.1007.top_right_bar_window_history.content.click&vd_source=1019ffdc843339404e9df6ae52ff9e77)
@@ -97,7 +97,40 @@ GPT助手的训练分为四个阶段：
 
 ![](img/20260903154307.png)
 + 语言模型在预训练之后，获得了强大的通用表示能力(general representations); 这意味着我们可以通过微调，将模型快速适配到任何感兴趣的下游任务中。
-
++ 预训练之后的基座模型，之所以可以只使用很少的数据就适配下游任务，是因为：
+  + 想要准确预测下一个token，必须深入理解文本结构以及其中蕴含的各种概念
+  + 所以**Transformer的训练过程本质上是在处理大量的语言建模任务，看起来是一个损失函数，但是本质是multitask**
 
 ![](img/20260903155138.png)
++ GPT-1的时候，发现`微调`是一种高效适配下游任务的方案
++ 到了GPT-2的时候，发现`通过提示工程`就可以高效激发模型潜力
+  + 语言模型本质上是在学习如何补全文档(complete documents)
+  + 因此可以通过设计文档(即：特征工程)来引导模型执行特定任务
+  + 比如，上图中的例子，给了一段背景材料，先自问自答给了一个QA，然后再提出真正的问题，让模型去生成答案。 
+  + 这里的第一个QA就是 **Few-shot prompt, 小样本提示**
+  + 而对于第二个Q，网络则会基于`文档补全`的逻辑，自动生成对应的答案
+  + **这里开启了提示词时代，开始可以和AI对话了，chatbot的雏形**
+  + 这里还都只是预训练模型的作用： **预训练模型 通过 提示词引导(比如： Few-shot prompt)，也是可以进行问答的**
+  + 即便不通过微调训练，通过精心设计的提示词工程， 就可以让模型在大量下游任务上取得很好的效果
++ 上图来自 GPT-2 论文的最后一页(附录的最后一个例子)
+
+![](img/20260903163832.png)
++ 从GPT-2之后，就百花齐放百家争鸣了，出现了大量的模型， [Mooler0410/LLMsPracticalGuide](https://github.com/Mooler0410/LLMsPracticalGuide), 来自论文[Harnessing the Power of LLMs in Practice: A Survey onChatGPT and Beyond](https://dl.acm.org/doi/epdf/10.1145/3649506)
++ 还有这个项目：[rasbt/LLMs-from-scratch](https://github.com/rasbt/LLMs-from-scratch)
++ 但是很多模型是不开源的， GPT-4和GPT-3都是通过API访问的
+  + GPT-3 base model的API是通过名称`Devanshi`访问的，
+  + 而GPT-4的API访问的不是base model，而是经过调优的助手模型
+  + GPT-2是开源的
+
+![](img/20260903164819.png)
++ base model并不是助手模型，在正常状态下并不会直接回答问题
++ 比如：你输入一个问题，它会按照补全文档的逻辑给出更多的问题
++ 如果想让它回答问题，则需要用特征工程这个技巧来编造一些通过补全文档可以实现的任务，比如：介绍下面是一段关于面包奶酪的诗，来让它补全
+
+![](img/20260903165301.png)
++ 甚至可以通过巧妙设计，让base model扮演助手的角色，主要还是要设计`Few-shot prompt`, 如上图，内容是：模拟助手和人类对话的场景。让模型理解这种对话模式，之后提出问题，让模型补全回答
++ 虽然技术上可行，但是这种方式效果有限，同时也不稳定
++ 因此采取另一种路径来打造真正的GPT助手，而不是文档补全模型(model document completers)， 这就引出了监督微调方法
+
+![](img/20260903165708.png)
 + 
