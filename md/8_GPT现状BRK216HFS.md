@@ -88,4 +88,16 @@ GPT助手的训练分为四个阶段：
 + 可以看出：
   + 初始化的时候参数是随机给的，所以生成的东西也很随机
   + 随着训练的进行，生成的样本越来越连贯和一致(coherent and consistent )
-  
+  + 最终会发现，模型掌握了单词，空格和标点符号的位置
+
+
+![](img/20260903153151.png)
++ 上图右侧LLaMA内容来自： [projects/OPT/chronicles/OPT175B_Logbook.pdf](https://github.com/facebookresearch/metaseq/blob/main/projects/OPT/chronicles/OPT175B_Logbook.pdf)
+  + 其实看[projects/OPT/chronicles/README.md](http://github.com/facebookresearch/metaseq/blob/main/projects/OPT/chronicles/README.md)就好了，这个其实是训练过程的损失曲线记录
+
+![](img/20260903154307.png)
++ 语言模型在预训练之后，获得了强大的通用表示能力(general representations); 这意味着我们可以通过微调，将模型快速适配到任何感兴趣的下游任务中。
+
+
+![](img/20260903155138.png)
++ 

@@ -88,6 +88,7 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 + 微调 [ChatGPT: Optimizing Language Models for Dialogue](https://openai.com/zh-Hans-CN/index/chatgpt/)
 + GPT2: [Language Models are Unsupervised Multitask Learners](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf.), 不用科学上网
 + LLaMA: [LLaMA: Open and Efficient Foundation Language Models](https://arxiv.org/pdf/2302.13971)
++ GPT1： [Improving Language Understanding by Generative Pre-Training](https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf)
 
 ----
 
