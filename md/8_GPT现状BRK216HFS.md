@@ -132,5 +132,75 @@ GPT助手的训练分为四个阶段：
 + 虽然技术上可行，但是这种方式效果有限，同时也不稳定
 + 因此采取另一种路径来打造真正的GPT助手，而不是文档补全模型(model document completers)， 这就引出了监督微调方法
 
+
+---
+
+这里补充一下**大模型的监督微调**，和以前**基于Bert这种通用语言模型进行下游任务例如情感分析的微调**的区别：
+
+**prompt**: 大模型领域的基于基座模型的监督微调，和以前基于Bert这种通用语言模型进行下游任务例如情感分析的微调，这两种微调有什么区别？
+
+|类目|传统微调/BERT 微调|监督微调/大模型 SFT|
+|---|---|---|
+|**是否注入新知识**| 学习新任务<br/>BERT 在预训练阶段只学习了通用的语言表示（如完形填空、下一句预测），它本身并不懂什么是“情感分析”或“命名实体识别”。<br/>微调的本质是让模型学习一个全新的下游任务，将预训练学到的通用特征映射到特定任务的标签空间。|激发潜能与对齐<br/>大模型在预训练阶段已经“阅读”了海量互联网数据，它本身已经具备了情感分析、逻辑推理等几乎所有知识（Zero-shot 能力）。<br/>SFT 的本质不是教它新知识，而是“激发”它已有的能力，并教它如何遵循人类的指令、以人类期望的格式和语气输出结果（即**意图对齐和格式对齐**）。|
+|**微调过程中网络结构是否改变**|通常需要在预训练模型的基础上增加特定任务的网络层。<br/>例如，做情感分析时，会在 BERT 顶部加一个全连接层（Classification Head），将 [CLS] token 的向量映射到具体的类别数（如 2 分类）|通常不改变模型的原有结构，不增加任何额外的分类头或任务特定层。<br/>它直接复用预训练模型的架构（通常直接复用预训练的 LM Head），仅仅是更新模型内部的权重（或使用 LoRA 等参数高效微调方法）。|
+|**损失函数**|损失函数是任务特定的。<br/>例如分类任务使用交叉熵损失（Cross-Entropy），只计算 [CLS] token 输出 logits 与真实标签之间的 Loss。|损失函数与预训练时完全一致，依然是自回归语言模型损失（Causal LM Loss，即 Next-token prediction）。<br/>关键区别在于 Loss 的计算范围：在 SFT 中，输入（Prompt/Instruction）和输出（Response）会拼接在一起，但只计算 Response（回复）部分的 Loss，Prompt 部分的 Loss 会被 mask 掉（不参与梯度更新）。|
+|**数据格式**|数据格式通常是 “文本-标签”对。<br/>例如：“这部电影真好看” -> 1 (正面)。<br/>数据量通常较小（几千到几万条），高度依赖昂贵的人工标注，且数据格式高度定制化。|数据格式是 “指令-回复”对（Prompt-Response） 或多轮对话。<br/>例如：“请分析以下电影评论的情感：‘这部电影真好看’” -> “这条评论表达了正面的情感...”。<br/>数据量较大（几万到几十万条），除了人工标注，现在大量依赖大模型自身合成数据（如 Self-Instruct, Evol-Instruct）以及高质量的数据筛选。|
+|**任务范式**|属于**判别式（Discriminative）** 模型。<br/>输入是固定的文本，输出是离散的类别、实体边界或相似度分数。它擅长“理解”和“分类”。|属于**生成式（Generative）** 模型。<br/>输入是开放的自然语言指令，输出也是开放的自然语言文本。它擅长“生成”、“对话”和“推理”。|
+|**参数规模与微调策略**|模型参数量小（通常在 1亿 - 3亿级别），算力消耗低，通常采用全参数微调（Full Fine-tuning）。|模型参数量巨大（70亿 - 数千亿级别），全参数微调成本极高。因此，大模型时代衍生出了繁荣的参数高效微调（PEFT） 技术，如 LoRA、QLoRA、P-Tuning 等，通过冻结大部分预训练权重，只训练极少量的新增参数（通常不到原模型的 1%）来达到接近全参数微调的效果。|
+
+>[!NOTE]
+> 反正监督微调这个词，就是专门用于对基座模型训练，获取chatBot的，专门是这类模型对这类任务的~
+
 ![](img/20260903165708.png)
+
+SFT模型来自Base model，但是算法一样（网络结构并没有修改）
+
+![](img/20260904105516.png)
++ 图中数据来自：[OpenAssistant/oasst1](https://huggingface.co/datasets/OpenAssistant/oasst1/viewer/default/train?row=0)
++ 右侧的标注规范(给标注人员看的手册)来自：[Training language models to follow instructions with human feedback](https://arxiv.org/pdf/2203.02155)-> `B.2 Labeling instructions`, p37和p38的Figure10和11，正文里写的是Table10和11，但是表格下面标注的是Figure
+  + 对应的OpenAI的blog: [根据指令调整语言模型](https://openai.com/zh-Hans-CN/index/instruction-following/)
+
+![](img/20260904133306.png)
++ SFT（监督微调）之后，下一步就是奖励建模和强化学习，或者统一为：`Reinforcement learning from human feedback`(基于人类反馈的强化学习阶段)
++ 即**RLHF包含奖励建模和强化学习两个阶段**
+
+![](img/20260904133759.png)
+
+![](img/20260904134045.png)
++ 在奖励建模阶段，会调整数据收集的方式，转为采用对比形式的数据
++ 最上方是同一个提示词/prompt, 然后用已经训练好的SFT模型，生成多个不同的回答，然后人工对这些回答进行排序
+
+![](img/20260904135307.png)
++ 排序后，对所有这些回答进行类似二元分类的操作
++ 如上表，三行的一个表格，第一部分都是prompt(蓝色的，prompt是一样的)，然后后面跟着SFT模型生成的不同的回答（黄色部分），然后在生成的回答末尾添加一个特殊的tokens标记
++ 这里说的只在这个绿色token处进行监督训练的意思就是，**不会对所有timestamp做监督训练，每个batch只在绿色token的这一个timestamp处进行监督训练**
++ 然后Transformer会预测这个completion在这个prompt下回答的多好，给出一个奖励值/评分，然后把预测的这个评分和真实标注的实际排序对比（一般是要求某个completion的评分比其他的高，即： 1st排名的分数要是最高的），以此作为损失函数设置的依据。
+
+
+----
+
+关于那个标记，没找到，只在[openai/webgpt_comparisons](https://huggingface.co/datasets/openai/webgpt_comparisons/viewer/default/train?row=0)里看到每个回答(prefix和completion的最后一个IDs都是 48366)
+```python
+# https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
+# 一共就四种encoding方案
+import tiktoken
+encoding = tiktoken.get_encoding("cl100k_base") #r50k_base #o200k_base #cl100k_base # p50k_base
+token_ids = [48366]
+decoded_text = encoding.decode(token_ids)
+print(f"序列解码结果: {decoded_text}")
+# 序列解码结果: ?).
+```
++ 类似的查看模型特殊标记的：
+  + [openai-mirror/gpt-oss-20b/special_tokens_map.json](https://www.modelscope.cn/models/openai-mirror/gpt-oss-20b/file/view/master/special_tokens_map.json?status=1)
+  + [openai-mirror/gpt-oss-20b/tokenizer_config.json](https://www.modelscope.cn/models/openai-mirror/gpt-oss-20b/file/view/master/tokenizer_config.json?status=1)
+  + [Qwen/Qwen3-4B-AWQ/tokenizer_config.json](https://www.modelscope.cn/models/Qwen/Qwen3-4B-AWQ/file/view/master/tokenizer_config.json?status=1)
+  + [Qwen/Qwen3-4B-AWQ/generation_config.json](https://www.modelscope.cn/models/Qwen/Qwen3-4B-AWQ/file/view/master/generation_config.json?status=1)
+
+另外，关于奖励模型的一些论文/博客：
++ [Interpreting Black Box Reward Models](https://alignment.openai.com/argo/)
++ InstructGPT: [Training language models to follow instructions with human feedback](https://arxiv.org/pdf/2203.02155)
++ [Fine-Tuning Language Models from Human Preferences](https://arxiv.org/pdf/1909.08593)
+
+![](img/20260904152111.png)
++ 有了奖励模型后，也不能直接部署，因为奖励模型并不足以成为一个实用的助手；但是奖励模型对强化学习是至关重要的
 + 
