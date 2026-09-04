@@ -203,4 +203,63 @@ print(f"序列解码结果: {decoded_text}")
 
 ![](img/20260904152111.png)
 + 有了奖励模型后，也不能直接部署，因为奖励模型并不足以成为一个实用的助手；但是奖励模型对强化学习是至关重要的
-+ 
++ 有了奖励模型，就可以对任意prompt对应的任意completion进行score了
+
+![](img/20260904152826.png)
++ 强化学习阶段，会再次收集很多prompts数据，并基于奖励模型进行训练
++ 和之前类似，也是同一个prompt，用待训练的SFT模型生成多个completion，然后用上面训练的RM(Reward Model)生成评分
++ 只对黄色部分的timestamp进行监督训练，此时用的还是相同的语言建模损失函数（预测下一个token），但是**会根据生成的奖励评分，对语言建模目标进行加权处理**
++ 例如：
+  + 上图的第一行，奖励模型判定这是一个高得分的completion，因此，我们在第一行中采样的所有标记都会得到强化(reinforced) → 出现的概率会变高
+  + 第二行，是个低得分的completion，因此，第二行中采样的所有标记都会被debuff → 未来出现的概率会降低
++ 就这样不断在不同batch上训练，最终可以得到一个可以生成这些黄色标记的策略(`policy`)
++ 训练完就得到了一个可以部署的模型了
+
+----
+
+详见：
++ 2022年12月9日，[ChatGPT 背后的“功臣”——RLHF 技术详解](https://huggingface.co/blog/zh/rlhf)
++ 对应的英文版本： [Illustrating Reinforcement Learning from Human Feedback (RLHF)](https://huggingface.co/blog/rlhf)
+
+---
+
+>[!NOTE]
+>prompt： 常见的基于奖励模型RM进行强化学习训练时，使用的损失函数是什么?针对大模型的RLHF训练
+
+**奖励模型（Reward Model, RM）训练的损失函数**：
++  **Bradley-Terry (BT) 模型推导出的成对排序损失（Pairwise Ranking Loss / Cross-Entropy Loss）**。
++ **核心思想**：对于同一个提示词（Prompt）$x$，人类偏好的回答（Chosen, $y_w$）的得分应该高于人类不偏好的回答（Rejected, $y_l$）的得分。
++ **损失函数公式**：
+$$ \mathcal{L}_{RM} = - \mathbb{E}_{(x, y_w, y_l) \sim \mathcal{D}} \left[ \log \sigma \left( r_\phi(x, y_w) - r_\phi(x, y_l) \right) \right] $$
++ **参数解释**：
+  + $x$：输入的 Prompt。
+  + $y_w$：人类偏好的回答（Winner/Chosen）。
+  + $y_l$：人类不偏好的回答（Loser/Rejected）。
+  + $r_\phi(x, y)$：奖励模型（参数为 $\phi$）输出的标量奖励分数。
+  + $\sigma$：Sigmoid 激活函数，$\sigma(z) = \frac{1}{1 + e^{-z}}$。
++ **本质**：这是一个**二元交叉熵损失（Binary Cross-Entropy Loss）**。它将 $r_\phi(x, y_w) - r_\phi(x, y_l)$ 的差值通过 Sigmoid 转化为概率，然后通过交叉熵让模型最大化“偏好回答得分高于非偏好回答”的概率。
+
+**强化学习（RL）策略模型训练的损失函数**，以PPO算法为例，PPO 算法的训练损失由三个核心部分组成：
+1. 策略损失（Policy Loss / Surrogate Objective）：是 Actor（策略模型）的核心损失函数，用于更新生成文本的策略，使其最大化 RM 给出的奖励。
+  $$ \mathcal{L}_{actor} = - \mathbb{E}_t \left[ \min \left( \rho_t(\theta) \hat{A}_t, \text{clip}(\rho_t(\theta), 1-\epsilon, 1+\epsilon) \hat{A}_t \right) \right] $$
+   + **参数解释**：
+     + $\rho_t(\theta) = \frac{\pi_\theta(a_t|s_t)}{\pi_{old}(a_t|s_t)}$：新旧策略的概率比值（Importance Sampling 权重）。
+     + $\hat{A}_t$：优势函数（Advantage），由 RM 给出的实际奖励和 Critic 模型预估的价值计算得出（$\hat{A}_t = R_t - V(s_t)$）。
+     + $\text{clip}(..., 1-\epsilon, 1+\epsilon)$：PPO 的核心裁剪机制，防止单次更新步长过大导致模型崩溃。
+     + **负号**：因为 RL 的目标是最大化期望回报，转化为 Loss 优化时需要加负号求最小值。
+2. 价值函数损失（Value Loss / Critic Loss）:是 Critic（价值模型）的损失函数，用于训练 Critic 准确预估当前状态的价值，从而计算出准确的 Advantage。
+  $$ \mathcal{L}_{critic} = \mathbb{E}_t \left[ \left( V_\theta(s_t) - \hat{R}_t \right)^2 \right] $$
+3. KL 散度惩罚（KL Penalty）—— RLHF 的灵魂
+  + 为了防止策略模型为了“刷高分”而生成乱码或偏离人类正常表达（即 Reward Hacking），必须在损失中引入 KL 散度，强制当前策略模型 $\pi_\theta$ 不要偏离初始的 SFT 参考模型 $\pi_{ref}$ 太远。
+  + 在 PPO 中，KL 惩罚通常**直接加在 RM 的奖励上**，形成最终用于计算 Advantage 的总奖励：
+    $$ R_{total} = R_{RM}(x, y) - \beta \cdot D_{KL}(\pi_\theta(\cdot|x) || \pi_{ref}(\cdot|x)) $$
+    或者，也可以直接作为正则化项加在总 Loss 中：
+    $$ \mathcal{L}_{total} = \mathcal{L}_{actor} + c_1 \mathcal{L}_{critic} + c_2 \beta \cdot D_{KL}(\pi_\theta || \pi_{ref}) $$
+
+**直接偏好优化（DPO 等）**
++ 由于 PPO 训练需要同时维护 Actor、Critic、RM、Reference 四个模型，显存占用极大且训练极不稳定。
++ 自 2023 年下半年至今，业界已大量转向**不需要显式训练 RM 和 RL 循环**的“直接偏好优化”算法（如 **DPO, KTO, ORPO**）。
+_ 以 **DPO (Direct Preference Optimization)** 为例，它通过数学推导，将 RM 的 Bradley-Terry 损失直接转化为策略模型的损失函数：
+  $$ \mathcal{L}_{DPO} = - \mathbb{E} \left[ \log \sigma \left( \beta \log \frac{\pi_\theta(y_w|x)}{\pi_{ref}(y_w|x)} - \beta \log \frac{\pi_\theta(y_l|x)}{\pi_{ref}(y_l|x)} \right) \right] $$
++ **当前最新的工程实践**，很多团队已经跳过 RM 和 RL，直接使用 **DPO Loss** 进行偏好对齐。
+
