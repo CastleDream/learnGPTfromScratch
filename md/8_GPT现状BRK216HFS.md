@@ -1,6 +1,21 @@
-- [P3: 构建 makemore 第二部分：多层感知机](#p3-构建-makemore-第二部分多层感知机)
+- [P8: GPT现状BRK216HFS](#p8-gpt现状brk216hfs)
   - [链接](#链接)
   - [关键内容](#关键内容)
+    - [GPT助手全流程](#gpt助手全流程)
+    - [预训练阶段——数据收集](#预训练阶段数据收集)
+    - [预训练阶段——构建的数据集](#预训练阶段构建的数据集)
+    - [预训练阶段——训练](#预训练阶段训练)
+    - [预训练阶段——微调/提示词工程](#预训练阶段微调提示词工程)
+    - [大模型的监督微调 VS 基于Bert这种通用语言模型进行下游任务例如情感分析的微调](#大模型的监督微调-vs-基于bert这种通用语言模型进行下游任务例如情感分析的微调)
+    - [SFT](#sft)
+    - [SFT-数据集构建和标注](#sft-数据集构建和标注)
+    - [RLHF](#rlhf)
+    - [RLHF-数据](#rlhf-数据)
+    - [RLHF-训练](#rlhf-训练)
+    - [RLHF-奖励模型](#rlhf-奖励模型)
+    - [奖励模型（Reward Model, RM）训练的损失函数 VS 强化学习（RL）策略模型训练的损失函数](#奖励模型reward-model-rm训练的损失函数-vs-强化学习rl策略模型训练的损失函数)
+    - [why RLHF](#why-rlhf)
+
 
 # P8: GPT现状BRK216HFS
 ## 链接
@@ -14,6 +29,7 @@ Github项目：
 ## 关键内容
 ![](img/20260902164621.png)
 
+### GPT助手全流程
 GPT助手的训练分为四个阶段：
 1. 预训练
 2. 有监督微调
@@ -28,6 +44,8 @@ GPT助手的训练分为四个阶段：
 + 实际上，**预训练阶段承载了绝大部分的计算工作**，这个阶段消耗了99%的训练计算时间和浮点数运算(training compute time and flops).可能需要上千的GPU,训练数月之久
 + 其他三个阶段都属于微调阶段(包括SFT,Reward Modeling以及RL),数十个GPU,训练小时/天就可以
 
+
+### 预训练阶段——数据收集
 
 ![](img/20260902205643.png)
 
@@ -60,6 +78,7 @@ GPT助手的训练分为四个阶段：
 >+ GPT3是类似的
 >+ 这就是关于预训练阶段，需要了解的一些量级(**准备工作**)
 
+### 预训练阶段——构建的数据集
 
 ![](img/20260903141826.png)
 + 实际预训练的时候，会将转换后的tokens IDs(整数序列)按批次组织成训练数据
@@ -75,6 +94,8 @@ GPT助手的训练分为四个阶段：
        "vocab_size": 50257
     }
   ```
+
+### 预训练阶段——训练
 
 ![](img/20260903150609.png)
 + 以其中绿色的单元格为例，预训练过程中，来说明某个批次中某个时间步所进行的操作
@@ -94,6 +115,8 @@ GPT助手的训练分为四个阶段：
 ![](img/20260903153151.png)
 + 上图右侧LLaMA内容来自： [projects/OPT/chronicles/OPT175B_Logbook.pdf](https://github.com/facebookresearch/metaseq/blob/main/projects/OPT/chronicles/OPT175B_Logbook.pdf)
   + 其实看[projects/OPT/chronicles/README.md](http://github.com/facebookresearch/metaseq/blob/main/projects/OPT/chronicles/README.md)就好了，这个其实是训练过程的损失曲线记录
+
+### 预训练阶段——微调/提示词工程
 
 ![](img/20260903154307.png)
 + 语言模型在预训练之后，获得了强大的通用表示能力(general representations); 这意味着我们可以通过微调，将模型快速适配到任何感兴趣的下游任务中。
@@ -135,6 +158,7 @@ GPT助手的训练分为四个阶段：
 
 ---
 
+### 大模型的监督微调 VS 基于Bert这种通用语言模型进行下游任务例如情感分析的微调
 这里补充一下**大模型的监督微调**，和以前**基于Bert这种通用语言模型进行下游任务例如情感分析的微调**的区别：
 
 **prompt**: 大模型领域的基于基座模型的监督微调，和以前基于Bert这种通用语言模型进行下游任务例如情感分析的微调，这两种微调有什么区别？
@@ -151,14 +175,20 @@ GPT助手的训练分为四个阶段：
 >[!NOTE]
 > 反正监督微调这个词，就是专门用于对基座模型训练，获取chatBot的，专门是这类模型对这类任务的~
 
+### SFT
+
 ![](img/20260903165708.png)
 
 SFT模型来自Base model，但是算法一样（网络结构并没有修改）
+
+### SFT-数据集构建和标注
 
 ![](img/20260904105516.png)
 + 图中数据来自：[OpenAssistant/oasst1](https://huggingface.co/datasets/OpenAssistant/oasst1/viewer/default/train?row=0)
 + 右侧的标注规范(给标注人员看的手册)来自：[Training language models to follow instructions with human feedback](https://arxiv.org/pdf/2203.02155)-> `B.2 Labeling instructions`, p37和p38的Figure10和11，正文里写的是Table10和11，但是表格下面标注的是Figure
   + 对应的OpenAI的blog: [根据指令调整语言模型](https://openai.com/zh-Hans-CN/index/instruction-following/)
+
+### RLHF
 
 ![](img/20260904133306.png)
 + SFT（监督微调）之后，下一步就是奖励建模和强化学习，或者统一为：`Reinforcement learning from human feedback`(基于人类反馈的强化学习阶段)
@@ -166,9 +196,13 @@ SFT模型来自Base model，但是算法一样（网络结构并没有修改）
 
 ![](img/20260904133759.png)
 
+### RLHF-数据
+
 ![](img/20260904134045.png)
 + 在奖励建模阶段，会调整数据收集的方式，转为采用对比形式的数据
 + 最上方是同一个提示词/prompt, 然后用已经训练好的SFT模型，生成多个不同的回答，然后人工对这些回答进行排序
+
+### RLHF-训练
 
 ![](img/20260904135307.png)
 + 排序后，对所有这些回答进行类似二元分类的操作
@@ -201,6 +235,9 @@ print(f"序列解码结果: {decoded_text}")
 + InstructGPT: [Training language models to follow instructions with human feedback](https://arxiv.org/pdf/2203.02155)
 + [Fine-Tuning Language Models from Human Preferences](https://arxiv.org/pdf/1909.08593)
 
+
+### RLHF-奖励模型
+
 ![](img/20260904152111.png)
 + 有了奖励模型后，也不能直接部署，因为奖励模型并不足以成为一个实用的助手；但是奖励模型对强化学习是至关重要的
 + 有了奖励模型，就可以对任意prompt对应的任意completion进行score了
@@ -214,6 +251,7 @@ print(f"序列解码结果: {decoded_text}")
   + 第二行，是个低得分的completion，因此，第二行中采样的所有标记都会被debuff → 未来出现的概率会降低
 + 就这样不断在不同batch上训练，最终可以得到一个可以生成这些黄色标记的策略(`policy`)
 + 训练完就得到了一个可以部署的模型了
++ ChatGPT就是一个基于RLHF的模型
 
 ----
 
@@ -225,6 +263,8 @@ print(f"序列解码结果: {decoded_text}")
 
 >[!NOTE]
 >prompt： 常见的基于奖励模型RM进行强化学习训练时，使用的损失函数是什么?针对大模型的RLHF训练
+
+### 奖励模型（Reward Model, RM）训练的损失函数 VS 强化学习（RL）策略模型训练的损失函数
 
 **奖励模型（Reward Model, RM）训练的损失函数**：
 +  **Bradley-Terry (BT) 模型推导出的成对排序损失（Pairwise Ranking Loss / Cross-Entropy Loss）**。
@@ -263,3 +303,23 @@ _ 以 **DPO (Direct Preference Optimization)** 为例，它通过数学推导，
   $$ \mathcal{L}_{DPO} = - \mathbb{E} \left[ \log \sigma \left( \beta \log \frac{\pi_\theta(y_w|x)}{\pi_{ref}(y_w|x)} - \beta \log \frac{\pi_\theta(y_l|x)}{\pi_{ref}(y_l|x)} \right) \right] $$
 + **当前最新的工程实践**，很多团队已经跳过 RM 和 RL，直接使用 **DPO Loss** 进行偏好对齐。
 
+### why RLHF
+
+![](img/20260908162821.png)
++ 上图来自：[Training language models to follow instructions with human feedback](https://arxiv.org/pdf/2203.02155)-> Figure1
++ 使用RLHF模型就是因为： 相比于SFT的模型以及用了Few-shot prompt的base model，人们更喜欢经过RLHF的模型~
+
+![](img/20260908163144.png)
++ 关于为什么 RLHF模型的效果好，没有统一的定论，这里可以给出一个简单的解释：
+  + 这是因为：比较和生成在计算上的不对称性(`How easy computationally it is to compare versus generate`)
++ 以上图为例，要求LLM生成一个三行的短诗，如果你是一个数据供应商(构建数据集的工程师)，那么不难明白，
+  + 直接从0生成是一件很难的事情；而如果给你三个选项，让你去选择/判断生成的哪一首诗更好，则后者这个任务要简单的多。
+  + 所以**从构造的数据集的角度，生成类的数据，vs 多个选项判断类的数据，后者的准确性和质量都要更高~**
+  + 即上面说的，生成一个答案 vs 比较多个已有答案 ，后者的计算量要小得多/简单的多
+  + 从这个角度来看，利用生成和比较之前的不对称性，即：**利用人类的判断力会是一种更有效的方式**
+
+![](img/20260908164254.png)
++ 在某些情况下，RLHF的模型不一定比base model有绝对的优势，RLHF模型会损失一定的熵值(entropy)
+  + 这意味着模型的输出会更确定/集中(more peaky results)
+  + 相比于base model, 生成的样本多样性会降低(lower variation)
++ 上图来自：[Mysteries of mode collapse](https://www.lesswrong.com/posts/t9svvNPNmFf5Qa3TA/mysteries-of-mode-collapse)
