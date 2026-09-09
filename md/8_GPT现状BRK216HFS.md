@@ -1,7 +1,7 @@
 - [P8: GPT现状BRK216HFS](#p8-gpt现状brk216hfs)
   - [链接](#链接)
-  - [关键内容](#关键内容)
-    - [GPT助手全流程](#gpt助手全流程)
+- [关键内容](#关键内容)
+  - [1. GPT助手全流程](#1-gpt助手全流程)
     - [预训练阶段——数据收集](#预训练阶段数据收集)
     - [预训练阶段——构建的数据集](#预训练阶段构建的数据集)
     - [预训练阶段——训练](#预训练阶段训练)
@@ -15,6 +15,9 @@
     - [RLHF-奖励模型](#rlhf-奖励模型)
     - [奖励模型（Reward Model, RM）训练的损失函数 VS 强化学习（RL）策略模型训练的损失函数](#奖励模型reward-model-rm训练的损失函数-vs-强化学习rl策略模型训练的损失函数)
     - [why RLHF](#why-rlhf)
+    - [ChatBot Areana](#chatbot-areana)
+  - [2. 高效使用GPT来解决实际问题](#2-高效使用gpt来解决实际问题)
+    - [举例说明](#举例说明)
 
 
 # P8: GPT现状BRK216HFS
@@ -26,10 +29,11 @@ Github项目：
 + <https://github.com/karpathy/makemore>
 + [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-hero)
 
-## 关键内容
+
+# 关键内容
+## 1. GPT助手全流程
 ![](img/20260902164621.png)
 
-### GPT助手全流程
 GPT助手的训练分为四个阶段：
 1. 预训练
 2. 有监督微调
@@ -323,3 +327,31 @@ _ 以 **DPO (Direct Preference Optimization)** 为例，它通过数学推导，
   + 这意味着模型的输出会更确定/集中(more peaky results)
   + 相比于base model, 生成的样本多样性会降低(lower variation)
 + 上图来自：[Mysteries of mode collapse](https://www.lesswrong.com/posts/t9svvNPNmFf5Qa3TA/mysteries-of-mode-collapse)
+
+![](img/20260908165617.png)
++ 因此，关于base model的使用，有一种场景非常适合，就是：已经拥有n个样本，希望生成更多类似的样本时
++ 因为base model有很丰富的不确定性，所以适合用来在延续你之前给的东西的风格基础上，生成大量风格迥异，新颖有趣的内容
+
+### ChatBot Areana
+![](img/20260909084757.png)
++ 上图来自： [lmsys-Chatbot Arena Leaderboard Updates (Week 2)](https://www.lmsys.org/blog/2023-05-10-leaderboard)
++ 即： 2023年5月8日的排行榜中，GPT4还是第一
++ 上图的前三名都是RLHF模型，其余都是SFT模型
++ 关于这个排行榜的计算规则，有：[Google Colab-Chatbot Arena: Elo Rating Calculation (July 17, 2023)](https://colab.research.google.com/drive/1RAWb22-PFNI-X1gPVzc927SGUdfr6nsR?usp=sharing)
++ 关于`lmsys`这个组织， 详见[about](https://www.lmsys.org/about), 其包含的项目有：[projects](https://www.lmsys.org/projects)
+  + LMSYS 于2023年由`加州大学伯克利分校`、斯坦福大学、加州大学圣地亚哥分校、卡内基梅隆大学和MBZUAI等多所高校联合发起，于2024年9月注册为非营利组织，致力于孵化早期开源及研究项目。
+  + 该机构因多个具有影响力的旗舰项目而广为人知，包括**Chatbot Arena**（已毕业）、**SGLang**、**FastChat**和Vicuna。
++ 这个机构出的：[huggingface:lmarena-ai/arena-leaderboard](https://huggingface.co/spaces/lmarena-ai/arena-leaderboard)
+  + 也就是：[LMArena - 全球AI大模型权威排行榜](https://lmarena-ai.com/), 对应的[lmarena](https://arena.ai/) 这个排行榜网站
+
+## 2. 高效使用GPT来解决实际问题
+### 举例说明
+![](img/20260909142903.png)
++ 假设你在写博客的时候，写到了一句话是：`加利福尼亚州的人口是阿拉斯加州的53倍`，
++ 为了得到这一结论，可以想象一下你的脑子里经历了多么复杂的思考，可能思考过程会类似于上图右侧
++ 很明显，思考过程其实是一边写，一边评估表达是否恰当；或者说在思考过程中，会和外部工具发生交互以及自我审视/校验
++ 以上是**人对待这个事情时进行的反应**
++ 但是GPT在处理时，这不过是一串序列标记(a sequence of tokens)
+
+
+![](img/20260909144043.png)
