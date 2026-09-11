@@ -18,6 +18,12 @@
     - [ChatBot Areana](#chatbot-areana)
   - [2. 高效使用GPT来解决实际问题](#2-高效使用gpt来解决实际问题)
     - [举例说明](#举例说明)
+    - [CoT](#cot)
+    - [self-consistency 自我一致性](#self-consistency-自我一致性)
+    - [self-reflection 自我反思](#self-reflection-自我反思)
+    - [提示工程总结](#提示工程总结)
+    - [Tree of Thoughts](#tree-of-thoughts)
+    - [ReAct](#react)
 
 
 # P8: GPT现状BRK216HFS
@@ -353,5 +359,80 @@ _ 以 **DPO (Direct Preference Optimization)** 为例，它通过数学推导，
 + 以上是**人对待这个事情时进行的反应**
 + 但是GPT在处理时，这不过是一串序列标记(a sequence of tokens)
 
-
 ![](img/20260909144043.png)
++ Transformer类的模型其实就是个token模拟器(simulators), 
++ 模型并不会真的知道 自己不知道哪些东西， 模型仅仅是一定要生成下一个token（`imitate the next token`）
++ 模型也不会知道自己擅长/不擅长什么，就只是竭尽全力去模仿生成下一个token
+  + 模型本身不会在循环过程中反思 don't reflect in the loop
+  + 模型本身也不会对内容进行合理性检查 sanity check
+  + 模型本身也不会在过程中主动修正自己的错误 correct their mistakes
+  + 模型做的只是：基于采样概率生成序列(`sample token sequences`)
++ 模型不会像人一样有独立的内部对白流(seperate inner monologue streams)
+
+### CoT
+![](img/20260911140048.png)
++ `人类` vs `大脑` 之间的认知差异 某种程度上可以通过 提示工程 来弥合
++ 例如：
+  + 在需要推理的任务中，CoT，chain of thought是一种很好的技术
+  + 你不能指望Transformer对每个token进行很多的推理(reasoning)，所以如果有很多推理信息需要呈现，则只能采取：把推理信息分散到更多的token这种策略
+  + 即：你不能给模型一个很复杂的任务，然后指望它只用一个token就回答这个问题，因为模型没有足够的时间去思考(没有足够容纳推理信息的tokens数量)， **Transformers  need tokens to think**
++ 对应文章：
+  + [Chain-of-Thought Prompting Elicits Reasoning in Large Language Models](https://arxiv.org/abs/2201.11903)
+  + [Large Language Models are Zero-Shot Reasoners](https://arxiv.org/abs/2205.11916)
+
+### self-consistency 自我一致性
+
+![](img/20260911141323.png)
++ [Self-Consistency Improves Chain of Thought Reasoning in Language Models](https://arxiv.org/abs/2203.11171)
++ 另一种有效的提示工程，被称为 自我一致性， Self-Consistency
++ 当llm对于某个问题输出的结果不太好时，可以不止采样一次，而是采样多个回答，然后通过某种流程，找出其中最好的样本作为结果
++ Transformer在预测下一个token时，也可能会因为采样概率的问题出错，运气不好，采样到一个不好的token，则之后就会越走越偏。。。 并不会像人一样，能回转；模型只会卡死，即便从某个timestamp开始，生成的token不好，也不会停止，而是一直在错误的序列下坚持下去
++ 因此，需要给模型回溯，检查或者在其周围采样的能力
+  + the ability to look back, inspect or try to basically sample around it
+
+
+### self-reflection 自我反思
+
+![](img/20260911145134.png)
++ [Can LLMs Critique and Iterate on Their Own Outputs?](https://evjang.com/2023/03/26/self-reflection.html)
+
++ 例如：
+  + 假设要求模型生成一首不押韵的诗，那么可能模型生成了一首诗，但是是押韵的诗
+  + 图上字看不清楚的话，去看上面链接的原文
+  + 这时候，对于GPT-4这样的大模型，你只需要问它：`Did you meet the assignment?`(你完成任务了吗？)，
+  + GPT4其实非常清楚自己其实没有完成任务~ 它只是采样运气不好。它会承认自己的错误并且重新按照要求完成一遍上面的任务~
+  + 但是如果不提示`Did you meet the assignment?`， 则不会这样
++ 所以要告诉模型，让模型去检查，或者CoT里的，让模型一步一步思考
+
+### 提示工程总结
+```bash
+# 需要给模型提供 回溯，检查或者在其周围采样的能力
+the ability to look back, inspect or try to basically sample around it
+
+# 1. CoT
+Let's think step by step.
+# 思维链CoT提示词，让模型逐步思考
+
+# 2. Self-Consistency
+# 采样多个答案，按照某种方式选择其中的一个，对应 basically sample around it(在其周围采样的能力)
+
+# 3. self-reflection
+Did you meet the assignment?
+# 让模型进行检查/反思
+```
+上述这些可以归类到`System 2`中，人类思考系统中的`System 1`和`System 2`，
++ 前者是快速的自发的思维过程(fast， automatic process)，这部分对应一般的LLM，只是进行token采样，是很直接简单的过程
++ 后者是缓慢的需要深思熟虑的规划过程(slower deliberate planning)
+
+### Tree of Thoughts
+
+![](img/20260911164115.png)
++ [Mastering the game of Go without human knowledge](https://www.nature.com/articles/nature24270)
++ [Tree of Thoughts: Deliberate Problem Solving with Large Language Models](https://arxiv.org/pdf/2305.10601), 或者neuralIPS,<https://proceedings.neurips.cc/paper_files/paper/2023/file/271db9922b8d1f4dd7aaef84ed5ac703-Paper-Conference.pdf>
++ 这里第二个论文的思维树很有趣，大概就是对于同一个prompt，可以多次采样生成不同的答案，这里用了python代码和prompt结合来调控下一步的走向
++ 对比对象是AlphaGo，AlphaGo的策略网络也是在当前步的基础上，分析下一个可能的步骤的情况，也类似树形；同时ALphaGo的策略也是通过学习人类棋手得到的
++ 思维树有点类似于：ALphaGo在文本生成领域的应用
+
+### ReAct
+
+![](img/20260911165035.png)
