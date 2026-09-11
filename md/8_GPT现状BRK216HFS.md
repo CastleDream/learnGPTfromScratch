@@ -436,3 +436,5 @@ Did you meet the assignment?
 ### ReAct
 
 ![](img/20260911165035.png)
++ 对大模型的使用不再局限于单纯的问答，而是python代码胶水+prompt提示词构成的复杂系统，也就是之后的`agent`
++ [ReAct: Synergizing Reasoning and Acting in Language Models](https://arxiv.org/abs/2210.03629)
