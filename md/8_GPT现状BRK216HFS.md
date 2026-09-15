@@ -24,6 +24,8 @@
     - [提示工程总结](#提示工程总结)
     - [Tree of Thoughts](#tree-of-thoughts)
     - [ReAct](#react)
+    - [LLM固有的局限(改善模仿→更准确)](#llm固有的局限改善模仿更准确)
+    - [Tool use](#tool-use)
 
 
 # P8: GPT现状BRK216HFS
@@ -438,3 +440,25 @@ Did you meet the assignment?
 ![](img/20260911165035.png)
 + 对大模型的使用不再局限于单纯的问答，而是python代码胶水+prompt提示词构成的复杂系统，也就是之后的`agent`
 + [ReAct: Synergizing Reasoning and Acting in Language Models](https://arxiv.org/abs/2210.03629)
+  + 把对prompt的answer设计为了`thought-action-observation`(思考,行动,观察)这样的序列
++ 关于[AutoGPT](https://github.com/significant-gravitas/autogpt), 
+  + [【单Agent框架】01-AutoGPT：以ChatGPT为核心的自治AI智能体](https://zhuanlan.zhihu.com/p/668234147), 这个文章写的很清楚了
+  + 主要作用: 自主管理任务清单,持续递归的分解任务
+
+### LLM固有的局限(改善模仿→更准确)
+
+![](img/20260915210235.png)
++ LLM存在一个心里怪癖(psychological quirk), LLM对于prompt的回复并不是追求人类理解的准确, 而是是模仿(本质上模仿训练的历史语料/记忆 里的内容)
++ 所以transformer在训练的时候并不会区分高质量/低质量的回答,即 训练语料里, 类似知乎这样的问答平台,同一个问题下面会有高质量的回答,也会有低质量的回答.
++ 在[Large Language Models Are Human-Level Prompt Engineers](https://arxiv.org/pdf/2211.01910)中,作者进行了很多实验,得到的结论是:
+  + `Let’s work this out in a step by step way to
+be sure we have the right answer.`这个prompt的效果最好,因为相当于让模型以获取正确答案为前提去进行推理,这样就可以排除一部分低质量的回答~(LLM不会再将概率权重分散到低质量解决方案上)
+  + 上图位于原论文的p22的Table 7
++ 总之就是尽量要求模型给出可靠的答案(strong solution), 比如:你可以提示
+  + 你是该领域的顶尖专家(you are a leading expert on this topic)
+  + 假设你的IQ是120(Pretend you have IQ 120), 不过这里注意不要IQ设置太高,比如设置400,这可能超出正常的训练分布;或者如果更离谱的话,匹配到科幻题材的数据分布
+
+
+### Tool use
+
+![](img/20260915215725.png)
