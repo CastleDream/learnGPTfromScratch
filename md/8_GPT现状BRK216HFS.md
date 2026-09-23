@@ -26,6 +26,8 @@
     - [ReAct](#react)
     - [LLM固有的局限(改善模仿→更准确)](#llm固有的局限改善模仿更准确)
     - [Tool use](#tool-use)
+    - [Retrieval only 2 memory only](#retrieval-only-2-memory-only)
+    - [](#)
 
 
 # P8: GPT现状BRK216HFS
@@ -462,3 +464,33 @@ be sure we have the right answer.`这个prompt的效果最好,因为相当于让
 ### Tool use
 
 ![](img/20260915215725.png)
+
+对于人类来说，人类在思考过程中知道自己的短处和长处，对于短处，会尝试从外界寻求工具来帮助解决
++ [Toolformer: Language Models Can Teach Themselves to Use Tools](https://arxiv.org/abs/2302.04761)
++ 常见的第三方可调用的工具包括：
+  + 代码解释器
+  + 计算器
+  + 网页搜索等
+
+
+### Retrieval only 2 memory only
+
+![](img/20260923155531.png)
++ 过去我们对于互联网信息的利用，主要是检索，即`Retrieval only`
++ 但是现在，似乎已经走向了另一个极端，即完全依赖大模型本身的记忆的`memory only`
++ 但其实，这两个极端之间还存在一个过渡：即`检索增强模型`(`Retrial-augmented models`)
+
+对于Transformer类的LLM来说，其上下文窗口就是它的工作记忆(`working memory`)
++ 只要可以将与当前`task`相关的信息都输入给LLM，那么模型就可以高效处理这些信息，得到满意的结果
++ 类似的实现就是RAG，检索增强生成方法，以`LlamaIndex`为例，
+  + 主要流程其实和`langchain`类似，都是那几个步骤
+  + 和人类似，想不起公式/文章的时候，最好是去查询原始文档，这就类似于`langchain`的把文档分割，向量化等等
+
+
+### 
+
+![](img/20260923164347.png)
+
+强制LLM的输出遵循特定模版
++ [guidance-ai/guidance](https://github.com/guidance-ai/guidance)
++ 
