@@ -27,7 +27,11 @@
     - [LLM固有的局限(改善模仿→更准确)](#llm固有的局限改善模仿更准确)
     - [Tool use](#tool-use)
     - [Retrieval only 2 memory only](#retrieval-only-2-memory-only)
-    - [](#)
+    - [Constrained prompting(约束采样技术 Constraint sampling)](#constrained-prompting约束采样技术-constraint-sampling)
+    - [微调技术](#微调技术)
+    - [推荐/建议](#推荐建议)
+    - [LLM适用的场景](#llm适用的场景)
+    - [GPT-4](#gpt-4)
 
 
 # P8: GPT现状BRK216HFS
@@ -487,10 +491,81 @@ be sure we have the right answer.`这个prompt的效果最好,因为相当于让
   + 和人类似，想不起公式/文章的时候，最好是去查询原始文档，这就类似于`langchain`的把文档分割，向量化等等
 
 
-### 
+### Constrained prompting(约束采样技术 Constraint sampling)
 
 ![](img/20260923164347.png)
 
 强制LLM的输出遵循特定模版
 + [guidance-ai/guidance](https://github.com/guidance-ai/guidance)
-+ 
++ 上图的例子，限制输出json格式，是这个repo的一个功能/feature，其实还有其他功能
+  + 关于显示json格式的示例代码，见: <https://github.com/guidance-ai/guidance/blob/main/notebooks/guaranteeing_valid_syntax.ipynb>
++ Guidance 是一种高效的编程范式，用于**引导语言模型的输出**。通过 Guidance，您可以控制输出的结构，为特定应用场景生成高质量结果，同时相比传统的提示或微调，在降低延迟和成本方面更具优势。它允许用户对生成过程进行约束（例如使用正则表达式和上下文无关规则），并能无缝地将控制逻辑（如条件判断、循环、工具调用）与生成过程结合。
++ 除了限制输出是json格式之外，这个`guidance`还具有以下功能：
+  + A Pythonic interface for language models, 语言模型的 Pythonic 接口
+  + Guarantee output syntax with constrained generation, 保证受限生成下的输出语法
+  + Debug grammars offline (no model API calls), 离线调试语法（无模型API调用）
+  + Create your own Guidance functions, 创建您自己的指导函数
+  + Generating JSON, 生成 JSON
++ 能实现这样的效果是因为，这个`guidance`可以**干预Transformer类网络输出的所有不同token的概率分布**
+  + 其实之前看的vllm里的`Structured Outputs`就是： <https://docs.vllm.ai/en/latest/features/structured_outputs/>
+  + vLLM supports the generation of structured outputs using `xgrammar` or `guidance` as backends. 
+  + 所以vllm支持生成结构化输出，本质上是因为调用了`xgrammar`或者`guidance`这样的后端~
+  + 截止`2026.9.24`, `guidance`的上一次更新时间是6个月前
+
+
+### 微调技术
+![](img/20260924143736.png)
++ [Language Models are Few-Shot Learners](https://arxiv.org/abs/2005.14165), 上图来自论文的Figure 2.1
++ SFT这种微调技术，从数据集构建和训练的门槛要求来说，都比较友好。
++ 而RLHF这种，暂时并不推荐尝试~ 这些方法目前还相当不稳定，训练难度很大
+
+### 推荐/建议
+![](img/20260924145327.png)
+
+会把任务分成两个部分：
+1. 实现最佳效果
+   1. 用当前最佳的模型，比如：在作者演讲的时候，当时最强的是GPT4
+   2. 用包含详细信息的prompts，比如：详细的任务上下文，相关信息，指令等。想象一下：如果有个无法用邮件和你对话的任务供应商，你会如何和他交流？（即：你要在单轮里把所有的事情都说清楚）
+   3. 检索并添加所有和prompt相关的信息/上下文进去
+   4. 用`prompt-engineering`技术实验测试
+   5. 用Few-shot技巧测试
+   6. 把对于LLM来说比较困难的任务卸载到外部工具/插件上（比如：计算器，编译器等）
+   + 如果已经把提示工程用到了极致，可以考虑用SFT
+   + 也可以考虑RLHF，如果能成功实现RLHF，通常效果会比SFT好一些
+2. 优化开销(在保证最佳效果的基础上，尝试降低costs)
+   1. 用低一档的模型
+   2. 用更短的prompt
+
+
+### LLM适用的场景
+
+![](img/20260924162739.png)
+
+LLM当前还存在很多问题：
++ 有偏见
++ 有幻觉
++ 推理错误
++ 不擅长某些领域，比如拼写相关的任务
++ 有知识截止日期，无法回答这个日期之后的内容
++ 很容易被攻击
+
+因此，建议在以下领域使用LLM
+1. 低风险场景 + 人类监管
+2. 把它们看成灵感和建议的来源，作为副驾驶(co-pilots),而非完全独立自主，独立执行任务的智能体
+
+
+
+### GPT-4
+
+![](img/20260924163132.png)
++ [Sparks of Artificial General Intelligence: Early experiments with GPT-4](https://arxiv.org/abs/2303.12712)
+
+
+![](img/20260924163304.png)
+
+围绕GPT-4的生态也在快速发展~
+
+
+![](img/20260924163452.png)
+
+博诸君一笑~
