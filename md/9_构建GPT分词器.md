@@ -3,11 +3,13 @@
 - [1. Tokenization](#1-tokenization)
   - [1.1 是很多奇怪现象的核心原因](#11-是很多奇怪现象的核心原因)
   - [1.2. tiktokenizer.vercel.app示例](#12-tiktokenizervercelapp示例)
-- [1. unicode字符集， utf-8编码，utf-16编码以及utf-32编码](#1-unicode字符集-utf-8编码utf-16编码以及utf-32编码)
-  - [1.1 unicode字符集 vs. utf-x编码](#11-unicode字符集-vs-utf-x编码)
-  - [1.2 三种 UTF 编码的区别解析](#12-三种-utf-编码的区别解析)
-  - [1.3. utf-8编码过程示例](#13-utf-8编码过程示例)
-  - [1.4. UTF-8 的精妙之处](#14-utf-8-的精妙之处)
+- [2. unicode字符集， utf-8编码，utf-16编码以及utf-32编码](#2-unicode字符集-utf-8编码utf-16编码以及utf-32编码)
+  - [2.1 unicode字符集 vs. utf-x编码](#21-unicode字符集-vs-utf-x编码)
+  - [2.2 三种 UTF 编码的区别解析](#22-三种-utf-编码的区别解析)
+  - [2.3. utf-8编码过程示例](#23-utf-8编码过程示例)
+  - [2.4. UTF-8 的精妙之处](#24-utf-8-的精妙之处)
+- [3. BPE](#3-bpe)
+- [4. 其他分词算法](#4-其他分词算法)
 
 # P9: 构建 GPT 分词器
 ## 链接
@@ -132,9 +134,9 @@ Much glory awaits someone who can delete the need for tokenization. But meanwhil
 从NLP任务中移除分词，会是个里程碑式的工作~
 
 
-# 1. unicode字符集， utf-8编码，utf-16编码以及utf-32编码
+# 2. unicode字符集， utf-8编码，utf-16编码以及utf-32编码
 
-## 1.1 unicode字符集 vs. utf-x编码
+## 2.1 unicode字符集 vs. utf-x编码
 ||Unicode|utf-x编码|
 |---|---|---|
 |基本概念|Unicode 是一本“字典”（字符集）|UTF-8/16/32 是这本字典的“三种不同打包运输方式”（编码实现）。|
@@ -144,7 +146,7 @@ Much glory awaits someone who can delete the need for tokenization. But meanwhil
 
 ---
 
-## 1.2 三种 UTF 编码的区别解析
+## 2.2 三种 UTF 编码的区别解析
 
 这三种编码方式的核心区别在于：**每个字符占用多少个字节（Byte），以及如何处理不同语言的字符。**
 |——|utf-8|utf-16|utf-32|
@@ -168,7 +170,7 @@ Much glory awaits someone who can delete the need for tokenization. But meanwhil
 | **大小端/BOM问题**| 无（按字节流解析） | 有（LE/BE，可能有BOM）| 有（LE/BE，可能有BOM） |
 | **主要应用场景** | **网络传输、文件存储、Web** | **Windows内部、Java/JS内存** | **内部文本处理引擎** |
 
-## 1.3. utf-8编码过程示例
+## 2.3. utf-8编码过程示例
 
 UTF-8 的核心编码规则表：UTF-8 是一种**变长编码**，它设计了 1 到 4 个字节的模板。规则如下：
 
@@ -258,7 +260,7 @@ print(f"标准 Unicode 值: {unicode_str}")
 
 ---
 
-## 1.4. UTF-8 的精妙之处
+## 2.4. UTF-8 的精妙之处
 
 1. **绝对兼容 ASCII**：
    英文字符的 Unicode 都在 `00-7F` 之间，用 UTF-8 编码时，直接走 1 字节模板 `0xxxxxxx`。这意味着，**纯英文的 UTF-8 文件和纯英文的 ASCII 文件在底层字节是完全一模一样的**。老系统不用改代码就能直接读 UTF-8 的英文。
@@ -269,3 +271,14 @@ print(f"标准 Unicode 值: {unicode_str}")
    如果在网络传输中**丢失了第一个字节**，接收端看到后面的 `10...` 知道这是“残缺”的后续字节，会直接丢弃，直到遇到下一个 `0...` 或 `110...` 才会重新开始解析。**它绝不会把半个汉字错认成另一个字符**，极大地减少了乱码扩散。
 
 **总结**：UTF-8 的转换过程，本质上就是**根据字符的大小，选择一个带“前缀标识”的固定模板，然后把 Unicode 二进制位像填空一样塞进去**的过程。
+
+
+# 3. BPE
+wiki上的解析其实就很清晰：[Byte-pair encoding](https://en.wikipedia.org/wiki/Byte-pair_encoding)
+
+hugging-face上的教程也很清晰: [BPE tokenization 算法](https://huggingface.co/learn/llm-course/zh-CN/chapter6/5)
+
+
+# 4. 其他分词算法
+
+直接把字节序列输入到LLM中: [MEGABYTE: Predicting Million-byte Sequences with Multiscale Transformers](https://arxiv.org/abs/2305.07185)
