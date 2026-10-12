@@ -13,6 +13,7 @@
   - [3.2 为什么不直接用UNICODE码点作为pair的基础单元](#32-为什么不直接用unicode码点作为pair的基础单元)
   - [3.3 UNICODE码点一定是一个整数吗？](#33-unicode码点一定是一个整数吗)
   - [3.4 总结](#34-总结)
+  - [3.5 utf-8非法起始字节](#35-utf-8非法起始字节)
 - [4. 其他分词算法](#4-其他分词算法)
 
 # P9: 构建 GPT 分词器
@@ -470,6 +471,40 @@ Unicode 也没有为世界上 200 多个国家的国旗各自分配独立码点�
 > 2. 对于一串文本，经过`utf-8`得到的字节表示列表，这个字节列表就相当于初始词表是 [0,255],词表大小为256，后续使用BPE，来不断缩短字节表示列表的长度，增加词表的大小
 
 为什么没有采用其他方式作为统计出现频次输入的编码方式：详见：[32-为什么不直接用unicode码点作为pair的基础单元](#32-为什么不直接用unicode码点作为pair的基础单元)的总结部分
+
+## 3.5 utf-8非法起始字节
+
+<img src="img/20261012133505.png" width="50%">
+
+| 字节类型 | 二进制格式 | 十六进制范围 | 作用 |
+| :--- | :--- | :--- | :--- |
+| **单字节 (ASCII)** | `0xxxxxxx` | `0x00` - `0x7F` | 表示英文字母、数字等（0~127） |
+| **多字节起始字节** | `110xxxxx`<br>`1110xxxx`<br>`11110xxx` | `0xC0` - `0xDF`<br>`0xE0` - `0xEF`<br>`0xF0` - `0xF7` | 告诉解码器：“注意，这是一个多字节字符的**开头**，后面还有 1~3 个字节跟着我。” |
+| **多字节后续字节** | **`10xxxxxx`** | **`0x80` - `0xBF`** | 告诉解码器：“我不是开头，我只是**跟在别人后面的数据**。” |
+
+`0x80` 转换成二进制是 **`10000000`**。对应 **`10xxxxxx`** 的模式，这意味着它是一个 **“后续字节”**。
+
+```python
+print(bytes([114]).decode("utf-8")) # r
+byte_ = bytes([226,128,153])
+print(byte_.decode("utf-8")) # '’'
+```
+
+根据[bytes.decode(encoding='utf-8', errors='strict')](https://docs.python.org/3/builtins/stdtypes.html#bytes.decode), 当编码发生错误的时候，这里是可以选择错误处理的方式的：[Error Handlers](https://docs.python.org/3/library/codecs.html#error-handlers)
+```python
+print(bytes([128]).decode("utf-8", errors="replace")) # 输出 �
+print(bytes([128]).decode("utf-8", errors="strict")) # 报错
+
+---------------------------------------------------------------------------
+UnicodeDecodeError                        Traceback (most recent call last)
+Cell In[126], line 6
+      3 print(bytes([128]).decode("utf-8", errors="replace"))
+      4 # https://docs.python.org/3/library/codecs.html#error-handlers
+      5 # https://docs.python.org/3/builtins/stdtypes.html#bytes.decode
+----> 6 print(bytes([128]).decode("utf-8", errors="strict"))
+
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte
+```
 
 # 4. 其他分词算法
 
