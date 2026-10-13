@@ -514,6 +514,7 @@ UnicodeDecodeError: 'utf-8' codec can't decode byte 0x80 in position 0: invalid 
 + java文档里也有regex实现的文档: <https://docs.oracle.com/javase/7/docs/api/java/util/regex/Pattern.html>
 + 菜鸟教程: <https://www.runoob.com/regexp/regexp-syntax.html>
 + regular-expressions.info网站: <https://www.regular-expressions.info/unicode.html>
+  + <https://www.regular-expressions.info/unicodecategory.html>
   + <https://www.regular-expressions.info/refunicode.html>
 
 ```python
