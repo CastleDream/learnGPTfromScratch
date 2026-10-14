@@ -15,6 +15,7 @@
   - [3.4 总结](#34-总结)
   - [3.5 utf-8非法起始字节](#35-utf-8非法起始字节)
   - [3.6 gpt2pattern(模式匹配)](#36-gpt2pattern模式匹配)
+  - [3.7 gpt2-encoder](#37-gpt2-encoder)
 - [4. 其他分词算法](#4-其他分词算法)
 
 # P9: 构建 GPT 分词器
@@ -610,10 +611,11 @@ r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""
 r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
 \s+(?!\S)
+# 匹配多个空白字符 + 不包含最后一个空白字符（即：要求有一串空白字符，但是这坨空白字符必须以非空白字符结尾~）
 ```
 **含义**：
 - `\s+`：匹配 1 个或多个空白字符（空格、换行符、制表符等）。
-- `(?!\S)`：**负向先行断言**，表示匹配的位置后面**不能**是非空白字符（即后面必须是空白字符，或者是字符串的结尾）。
+- `(?!\S)`：**负向先行断言(negative lookahead assertion in regex)**，表示匹配的位置后面**不能**是非空白字符（即后面必须是空白字符，或者是字符串的结尾）。
   - `( )`	标记一个子表达式的开始和结束位置。子表达式可以获取供以后使用。要匹配这些字符，请使用 \( 和 \)。
 
 **作用**：专门用来匹配**位于文本末尾的连续空白**，或者**后面紧跟着字符串结尾的空白**。这有助于在文本末尾的换行或空格被单独、干净地切分出来。
@@ -637,7 +639,39 @@ r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""
 > 2. **多语言支持**：使用了 `\p{L}` 和 `\p{N}` 而不是简单的 `a-z` 或 `0-9`，这使得该分词器天生支持中文、日文、韩文、阿拉伯文等全球各种语言。
 > 3. **字符隔离**：严格将“字母”、“数字”、“标点”分开。例如 `Hello, world! 123` 会被切分为 `["Hello", ", ", "world", "! ", "123"]`（具体空格归属视匹配顺序而定），这种细粒度的切分有利于后续的 BPE 算法学习子词。
 
+## 3.7 gpt2-encoder
 
+```bash
+set "HF_ENDPOINT=https://hf-mirror.com"
+huggingface-cli download openai-community/gpt2 --local-dir D:/model/gpt2 --local-dir-use-symlinks False
+```
+
+从[download_model.py](https://github.com/openai/gpt-2/blob/master/download_model.py)可知，`encoder.py`里用到的`'encoder.json'`以及`'vocab.bpe'`的下载位置是:
++ 在[Model version](https://github.com/openai/gpt-2/blob/master/model_card.md)，可以看到有124 million, 355 million, and 774 million以及1.5 billion的gpt2版本的模型
++ 所以`download_model.py`要求输入的模型尺寸，对应的应该有四个可选的值：
+  ```bash
+     download_model.py 124M/335M/774M/？M
+  ```
+```bash
+# https://openaipublic.blob.core.windows.net/gpt-2/models/1542M/encoder.json
+# https://openaipublic.blob.core.windows.net/gpt-2/models/1542M/vocab.bpe
+# 论文以及网页博客里写的是 117M, 345M， 762M。和github上面给的有点出入
+
+https://openaipublic.blob.core.windows.net/gpt-2/models/1558M/encoder.json
+https://openaipublic.blob.core.windows.net/gpt-2/models/1558M/vocab.bpe
+
+# 直接用powershell来下载， PowerShell 是 Windows 更现代的命令行，使用 Invoke-WebRequest（可简写为 iwr 或 wget）来下载。
+
+iwr -Uri "https://openaipublic.blob.core.windows.net/gpt-2/models/1558M/encoder.json" -OutFile "encoder.json"
+cd other
+iwr -Uri "https://openaipublic.blob.core.windows.net/gpt-2/models/1558M/vocab.bpe" -OutFile "vocab.bpe"
+```
+
+下载发现，`openaipublic`里的这两个文件，其实和`huggingface/gpt2`中的文件是对应的：
++ `encoder.json`→`vocab.json`，词表长度 50257个（手动添加了一个`"<|endoftext|>": 50256`）
++ `vocab.bpe`→`merges.txt`， merges的样本数是 50000个
++ 所以相当于执行了5w次合并，在 256个词语([0,255])的基础上，合并得到了 50256个词语([0, 50255]的序号),最后再人工添加了一个`"<|endoftext|>": 50256`词
++ 所以随便找一个看就可以
 
 # 4. 其他分词算法
 
