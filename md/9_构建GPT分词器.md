@@ -16,6 +16,7 @@
   - [3.5 utf-8非法起始字节](#35-utf-8非法起始字节)
   - [3.6 gpt2pattern(模式匹配)](#36-gpt2pattern模式匹配)
   - [3.7 gpt2-encoder](#37-gpt2-encoder)
+  - [3.8 special tokens（特殊标记）](#38-special-tokens特殊标记)
 - [4. 其他分词算法](#4-其他分词算法)
 
 # P9: 构建 GPT 分词器
@@ -672,6 +673,10 @@ iwr -Uri "https://openaipublic.blob.core.windows.net/gpt-2/models/1558M/vocab.bp
 + `vocab.bpe`→`merges.txt`， merges的样本数是 50000个
 + 所以相当于执行了5w次合并，在 256个词语([0,255])的基础上，合并得到了 50256个词语([0, 50255]的序号),最后再人工添加了一个`"<|endoftext|>": 50256`词
 + 所以随便找一个看就可以
+
+
+## 3.8 special tokens（特殊标记）
++ FIM(Fill in the Middle): [Efficient Training of Language Models to Fill in the Middle](https://arxiv.org/abs/2207.14255)
 
 # 4. 其他分词算法
 
