@@ -17,6 +17,8 @@
   - [3.6 gpt2pattern(模式匹配)](#36-gpt2pattern模式匹配)
   - [3.7 gpt2-encoder](#37-gpt2-encoder)
   - [3.8 special tokens（特殊标记）](#38-special-tokens特殊标记)
+  - [3.9 minbpe](#39-minbpe)
+  - [3.10 sentencepiece](#310-sentencepiece)
 - [4. 其他分词算法](#4-其他分词算法)
 
 # P9: 构建 GPT 分词器
@@ -677,6 +679,15 @@ iwr -Uri "https://openaipublic.blob.core.windows.net/gpt-2/models/1558M/vocab.bp
 
 ## 3.8 special tokens（特殊标记）
 + FIM(Fill in the Middle): [Efficient Training of Language Models to Fill in the Middle](https://arxiv.org/abs/2207.14255)
+
+
+## 3.9 minbpe
+
+https://github.com/karpathy/minbpe
+
+## 3.10 sentencepiece
+<https://github.com/google/sentencepiece>
++ Llama和Mistral系列的模型用的都是这个库来训练分词器的
 
 # 4. 其他分词算法
 
