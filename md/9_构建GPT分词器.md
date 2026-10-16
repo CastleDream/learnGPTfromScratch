@@ -689,6 +689,23 @@ https://github.com/karpathy/minbpe
 <https://github.com/google/sentencepiece>
 + Llama和Mistral系列的模型用的都是这个库来训练分词器的
 
+相比于`tiktoken`只支持BPE tokenizers的推理,`sentencepiece`因为可以高效的进行训练和推理BPE tokenizers而更常用。二者最大的不同在于：
++ `sentencepiece`直接在`Unicode code points`上运行BPE，其包含一个选项：`character_coverage`，用来指示如何处理出现次数很少的罕见的codepoints，
+  + 要么就是直接映射为`UNK`token，
+  + 要么如果开启了`byte_fallback`,则会对其进行`utf-8`编码，然后再对原始字节进行编码
+
+简单来说:
+- tiktoken先编码为`utf-8`, 然后BPEs再对字节进行处理
+- sentencepiece直接对code points进行BPEs，同时对于罕见的code points，支持回退到`utf-8`字节(罕见度rarity由`character_coverage`这个超参决定)，然后再转换为字节tokens
+
+sentencepiece这个库因为存在了很久，所以支持的需求范围很广，所以代码也会有一些历史遗留问题，所以参数很多：
++ 原始md文档：<https://github.com/google/sentencepiece/blob/master/doc/options.md>
++ 网页显示文档：<https://google.github.io/sentencepiece/doc/options/>
+
+Docs for sentencepiece options:
+- [markdown](https://github.com/google/sentencepiece/blob/master/doc/options.md)
+- [protobuf](https://github.com/google/sentencepiece/blob/master/src/sentencepiece_model.proto#L193)
+
 # 4. 其他分词算法
 
 直接把字节序列输入到LLM中: [MEGABYTE: Predicting Million-byte Sequences with Multiscale Transformers](https://arxiv.org/abs/2305.07185)
