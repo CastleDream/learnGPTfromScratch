@@ -19,6 +19,7 @@
   - [3.8 special tokens（特殊标记）](#38-special-tokens特殊标记)
   - [3.9 minbpe](#39-minbpe)
   - [3.10 sentencepiece](#310-sentencepiece)
+    - [1. 查看tokenizer.model中的配置文件](#1-查看tokenizermodel中的配置文件)
 - [4. 其他分词算法](#4-其他分词算法)
 
 # P9: 构建 GPT 分词器
@@ -705,6 +706,152 @@ sentencepiece这个库因为存在了很久，所以支持的需求范围很广�
 Docs for sentencepiece options:
 - [markdown](https://github.com/google/sentencepiece/blob/master/doc/options.md)
 - [protobuf](https://github.com/google/sentencepiece/blob/master/src/sentencepiece_model.proto#L193)
+
+
+----
+
+Llama 3 / 3.1 已经没有 `tokenizer.model` 了，换成了 `tiktoken` 风格的 `tokenizer.json + tokenizer_config.json`（BPE，vocab 128k）。
+
+tokenizer.model 是 Llama 1/2 那一代的 SentencePiece Unigram
+
+
+### 1. 查看tokenizer.model中的配置文件
+```bash
+> pip show sentencepiece
+Name: sentencepiece
+Version: 0.2.0
+Summary: SentencePiece python wrapper
+...
+Location: e:\software\miniconda\envs\hsllm\lib\site-packages
+...
+
+# 去上面的地址，进一步找到： miniconda\envs\hsllm\lib\site-packages\sentencepiece\sentencepiece_model_pb2.py文件
+# 把这个文件复制到工作目录下
+```
+
+
+`tokenizer.model` 文件本身就已经是 Protobuf（Protocol Buffers）序列化后的二进制文件了。
++ Meta 的 LLaMA 系列模型使用的 `tokenizer.model` 是基于 **SentencePiece** 训练的 BPE 模型。
++ SentencePiece 在保存模型时，会将词表、合并规则等数据序列化为二进制格式（底层就是 Protobuf）。因此，当你用记事本、VSCode 等纯文本编辑器直接打开它时，看到的“乱码”其实是正常的二进制字节流，**你不需要将它“转换”为 Protobuf 格式，而是需要用代码将其“反序列化（解析）”出来**。
+
+根据你的具体需求，这里提供两种方案：
+1. 常规使用（推荐，用于分词和推理）：如果你只是想在代码中加载这个 `Tokenizer` 进行文本编码/解码，直接使用 `sentencepiece` 或 HuggingFace 的 `transformers` 库即可，其底层已经帮你做好了 Protobuf 的反序列化。
+    ```python
+    # 1. 使用 `sentencepiece` 库（最轻量)
+    import sentencepiece as spm
+
+    # 直接加载模型文件
+    sp = spm.SentencePieceProcessor(model_file='tokenizer.model')
+
+    text = "Hello, LLM!"
+    # 编码为 token ids
+    ids = sp.encode(text, out_type=int)
+    print("Token IDs:", ids)
+
+    # 解码回文本
+    decoded_text = sp.decode(ids)
+    print("Decoded:", decoded_text)
+
+    # 2. 使用 HuggingFace `transformers`（配合模型推理）
+    from transformers import LlamaTokenizer
+
+    # 假设 tokenizer.model 在当前目录下
+    tokenizer = LlamaTokenizer.from_pretrained('./') 
+
+    inputs = tokenizer("Hello, LLM!", return_tensors="pt")
+    print(inputs.input_ids)
+    ```
+2. 底层解析（真正“用 Protobuf 打开”查看内部结构）: 想研究 Tokenizer 的底层结构（查看 Protobuf 里的 `pieces`、`score`、`type` 等原始字段），可以使用 Google 的 `protobuf` 库直接解析这个二进制文件。`SentencePiece` 的模型结构定义在 [sentencepiece_model.proto](https://github.com/google/sentencepiece/blob/master/src/sentencepiece_model.proto) 中。  
+   1. 获取并编译 proto 文件: 从 `SentencePiece` 的 GitHub 仓库下载 `src/sentencepiece_model.proto`，然后使用 `protoc` 编译成 Python 文件：
+      ```bash
+        protoc --python_out=. sentencepiece_model.proto
+        # 如果不想编译，可以直接 `pip install sentencepiece`，然后在它的安装目录里找到编译好的 `sentencepiece_model_pb2.py` 拷贝到你的项目里
+      ```
+   2. 用 Python 原生 Protobuf 解析
+      ```python
+      # 假设你已经有了 sentencepiece_model_pb2.py
+      import sentencepiece_model_pb2 as model_pb2
+
+      # 读取二进制文件
+      with open('tokenizer.model', 'rb') as f:
+          model_proto = model_pb2.ModelProto()  # 实例化 Protobuf 消息对象
+          model_proto.ParseFromString(f.read()) # 反序列化
+
+      # 现在你可以像操作普通 Python 对象一样查看底层结构了
+      print("Normalizer spec:", model_proto.normalizer_spec.name)
+      print("Vocab size:", len(model_proto.pieces))
+
+      # 打印词表中的前 10 个 token 及其信息
+      for i, piece in enumerate(model_proto.pieces):
+          if i >= 10:
+              break
+          # piece.piece 是字符串，piece.score 是 BPE 合并的优先级分数
+          # piece.type 表示类型 (如 UNK, BOS, EOS, PAD, NORMAL, USER_DEFINED)
+          print(f"ID: {i}, Token: {repr(piece.piece)}, Score: {piece.score}, Type: {piece.type}")
+      ````
+
+----
+
+如果想查配置文件，直接
+```python
+trainer_spec = model_proto.trainer_spec
+print(trainer_spec)
+```
+
+>[!NOTE]
+>1. 所有的训练和结构配置都在 `model_proto.trainer_spec` 中。
+>2. 文本预处理和前后缀配置在 `model_proto.normalizer_spec` 中。
+>3. 遇到枚举类型（如 model_type），记得使用 `.Name()` 方法将其转换为字符串。
+
+
+在[sentencepiece/src/sentencepiece_model.proto](https://github.com/google/sentencepiece/blob/master/src/sentencepiece_model.proto#L269)中，有：
+```proto
+# 所以下面这坨就是model_proto的结构
+// ModelProto stores model parameters.
+// SentencePieceProcessor is supposed to be self-contained.
+// All settings/parameters which may change the behavior must be encoded
+// in ModelProto.
+message ModelProto {
+  message SentencePiece {
+    enum Type {
+      NORMAL = 1;        // normal symbol
+      UNKNOWN = 2;       // unknown symbol. only <unk> for now.
+      CONTROL = 3;       // control symbols. </s>, <s>, <2ja> etc.
+      USER_DEFINED = 4;  // user defined symbols.
+                         // Typical usage of USER_DEFINED symbol
+                         // is placeholder.
+      BYTE = 6;          // byte symbols. Used when `byte_fallback` is true.
+      UNUSED = 5;        // this piece is not used.
+    }
+    optional string piece = 1;  // piece must not be empty.
+    optional float score = 2;
+    optional Type type = 3 [default = NORMAL];
+
+    // Customized extensions: the range of field numbers
+    // are open to third-party extensions.
+    extensions 200 to max;
+  }
+
+  // Sentence pieces with scores.
+  repeated SentencePiece pieces = 1;
+
+  // Spec used to generate this model file.
+  optional TrainerSpec trainer_spec = 2;
+
+  // Spec for text normalization.
+  optional NormalizerSpec normalizer_spec = 3;
+
+  // Spec for text de-normalization.
+  optional NormalizerSpec denormalizer_spec = 5;
+
+  reserved 4;  // Deprecated self_test_data.
+
+  // Customized extensions: the range of field numbers
+  // are open to third-party extensions.
+  extensions 200 to max;
+}
+```
+
 
 # 4. 其他分词算法
 
