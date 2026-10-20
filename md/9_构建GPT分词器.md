@@ -19,8 +19,10 @@
   - [3.8 special tokens（特殊标记）](#38-special-tokens特殊标记)
   - [3.9 minbpe](#39-minbpe)
   - [3.10 sentencepiece](#310-sentencepiece)
-    - [1. 查看tokenizer.model中的配置文件](#1-查看tokenizermodel中的配置文件)
+    - [1. 基本说明](#1-基本说明)
+    - [2. 查看tokenizer.model中的配置文件](#2-查看tokenizermodel中的配置文件)
 - [4. 其他分词算法](#4-其他分词算法)
+- [5. Transformer在其他领域的应用(如何处理多模态输入)](#5-transformer在其他领域的应用如何处理多模态输入)
 
 # P9: 构建 GPT 分词器
 ## 链接
@@ -50,12 +52,39 @@ LLM中很多古怪的现象，往往都能追溯到分词(`Tokenizer`)这一步,
 Tokenization is at the heart of much weirdness of LLMs. Do not brush it off.
 
 - Why can't LLM spell words? **Tokenization**.
+  - 因为词元token不一定对应真正意义上的一个单词，例如： `cl100kbase`中， `.DefaultCellStyle`这三个单词实际上组成了一个token,<https://tiktokenizer.vercel.app/?model=cl100k_base>, 因此，如果去问GPT4关于这个词语相关的语法拼写问题，比如： `how many letter L in .DefaultCellStyle`,则回复就是错的。以及`Reverse the string .DefaultCellStyle`这类的prompt，结果都不会理想
+  
+    <img src="img/20261020153811.png" width="60%">
 - Why can't LLM do super simple string processing tasks like reversing a string? **Tokenization**.
+  - 同上，如果直接要求反转`.DefaultCellStyle`则失败，但是如果prompt里分两步： 1. 把这个词语用逗号将每个字母分开； 2. 把这串逗号隔开的字母反过来，则就可以成功实现
 - Why is LLM worse at non-English languages (e.g. Japanese)? **Tokenization**.
+  - 可以看到，同样用来表达`hello how are you`, 英语只用了五个token，而单纯`hello`对应的韩语就用了三个token
+  - 因此，不仅是基座模型训练的语料中非英语的少，训练tokenizer的语料里非英语也少
+    
+    <img src="img/20261020154728.png" width="60%">
 - Why is LLM bad at simple arithmetic? **Tokenization**.
+  - 这和数字的分词方式有关，比如加法其实是一种字符级别的算法，会先计算个位，再十位，...。但是这些数字在分词过程中的表示完全是随机的，取决于其在训练过程中是否会被合并成更大的token
+  - [Integer tokenization is insane](https://www.beren.io/2023-02-04-Integer-tokenization-is-insane/), 这个文章就研究了gpt2的分词对于4位数的划分情况，可能会被划分成两个token，1-3,2-2，3-1，也可能是4位划分成一个token，还有可能是每个数字一个token，随机性非常强
+  - Llama2在训练分词器的时候，对所有数字都进行了split，这也是在某种程度上提高计算能力
+
+    <img src="img/20261020161142.png" width="60%">
+
 - Why did GPT-2 have more than necessary trouble coding in Python? **Tokenization**.
+  - 模型架构，数据集，模型能力等的问题，但是也存在分词机制的问题
+  - 对于gpt-2来说，分词里的空格处理非常烂，但是gpt4改善了这一问题
+
+    <img src="img/20261020162426.png" width="60%">
+
 - Why did my LLM abruptly halt when it sees the string "<|endoftext|>"? **Tokenization**.
+  - 例如：prompt为`Print the string <|endoftext>`,则llm就不输出了。。
+  - 可能是在调用`encode`方法时，设置了`allowd_special`类似的参数，导致允许将这个字符作为prompt中的字符来处理了
+  - 所以在llm初期的gpt2这些模型，并没有设置对特殊字符的防御(prompt注入)
 - What is this weird warning I get about a "trailing whitespace"? **Tokenization**.
+  - <https://platform.openai.com/playground>
+  - 如果正常输入，则正常回复；但是如果在输入后面多加一个空格，则就会出现一个警告信息
+
+    <img src="img/20261020163159.png" width="60%">
+
 - Why the LLM break if I ask it about "SolidGoldMagikarp"? **Tokenization**.
 - Why should I prefer to use YAML over JSON with LLMs? **Tokenization**.
 - Why is LLM not actually end-to-end language modeling? **Tokenization**.
@@ -687,8 +716,11 @@ iwr -Uri "https://openaipublic.blob.core.windows.net/gpt-2/models/1558M/vocab.bp
 https://github.com/karpathy/minbpe
 
 ## 3.10 sentencepiece
+### 1. 基本说明
+
 <https://github.com/google/sentencepiece>
 + Llama和Mistral系列的模型用的都是这个库来训练分词器的
++ **这个库的doc里的文档还是很全的，毕竟用法比较单一，就是单纯训练分词器的**
 
 相比于`tiktoken`只支持BPE tokenizers的推理,`sentencepiece`因为可以高效的进行训练和推理BPE tokenizers而更常用。二者最大的不同在于：
 + `sentencepiece`直接在`Unicode code points`上运行BPE，其包含一个选项：`character_coverage`，用来指示如何处理出现次数很少的罕见的codepoints，
@@ -715,7 +747,7 @@ Llama 3 / 3.1 已经没有 `tokenizer.model` 了，换成了 `tiktoken` 风格�
 tokenizer.model 是 Llama 1/2 那一代的 SentencePiece Unigram
 
 
-### 1. 查看tokenizer.model中的配置文件
+### 2. 查看tokenizer.model中的配置文件
 ```bash
 > pip show sentencepiece
 Name: sentencepiece
@@ -733,6 +765,7 @@ Location: e:\software\miniconda\envs\hsllm\lib\site-packages
 `tokenizer.model` 文件本身就已经是 Protobuf（Protocol Buffers）序列化后的二进制文件了。
 + Meta 的 LLaMA 系列模型使用的 `tokenizer.model` 是基于 **SentencePiece** 训练的 BPE 模型。
 + SentencePiece 在保存模型时，会将词表、合并规则等数据序列化为二进制格式（底层就是 Protobuf）。因此，当你用记事本、VSCode 等纯文本编辑器直接打开它时，看到的“乱码”其实是正常的二进制字节流，**你不需要将它“转换”为 Protobuf 格式，而是需要用代码将其“反序列化（解析）”出来**。
++ [google/sentencepiece: Manually modifying SentencePiece model?#121](https://github.com/google/sentencepiece/issues/121)
 
 根据你的具体需求，这里提供两种方案：
 1. 常规使用（推荐，用于分词和推理）：如果你只是想在代码中加载这个 `Tokenizer` 进行文本编码/解码，直接使用 `sentencepiece` 或 HuggingFace 的 `transformers` 库即可，其底层已经帮你做好了 Protobuf 的反序列化。
@@ -767,12 +800,22 @@ Location: e:\software\miniconda\envs\hsllm\lib\site-packages
         protoc --python_out=. sentencepiece_model.proto
         # 如果不想编译，可以直接 `pip install sentencepiece`，然后在它的安装目录里找到编译好的 `sentencepiece_model_pb2.py` 拷贝到你的项目里
       ```
-   2. 用 Python 原生 Protobuf 解析
+   2. 后来发现，在 [sentencepiece/doc/model_proto.md](https://github.com/google/sentencepiece/blob/master/doc/model_proto.md#1-reading-standard-metadata-python)文档中，有：
+      ```python
+        # 可以直接从sentencepiece库里导入，不需要把这个文件放在项目目录里
+        from sentencepiece import sentencepiece_model_pb2 as spm_pb2
+        with open('../other/Llama/tokenizer.model', "rb") as f:
+            proto_bytes = f.read()
+        model_proto = spm_pb2.ModelProto()
+        model_proto.ParseFromString(proto_bytes)
+        ...
+        # 剩下就是读取对应的配置项内容了
+      ```
+   3. 用 Python 原生 Protobuf 解析
       ```python
       # 假设你已经有了 sentencepiece_model_pb2.py
       import sentencepiece_model_pb2 as model_pb2
 
-      # 读取二进制文件
       with open('tokenizer.model', 'rb') as f:
           model_proto = model_pb2.ModelProto()  # 实例化 Protobuf 消息对象
           model_proto.ParseFromString(f.read()) # 反序列化
@@ -856,3 +899,13 @@ message ModelProto {
 # 4. 其他分词算法
 
 直接把字节序列输入到LLM中: [MEGABYTE: Predicting Million-byte Sequences with Multiscale Transformers](https://arxiv.org/abs/2305.07185)
+
+基于GIST tokens来压缩提示词(如何引入新的token，扩充词表（这也是一个有广阔研究前景的方向）)：[Learning to Compress Prompts with Gist Tokens](https://arxiv.org/abs/2304.08467)
+
+
+# 5. Transformer在其他领域的应用(如何处理多模态输入)
++ [Taming Transformers for High-Resolution Image Synthesis (a.k.a #VQGAN)](https://compvis.github.io/taming-transformers/)
++ ChatGPT Sora: 
+  + [Video generation models as world simulators](https://openai.com/index/video-generation-models-as-world-simulators/)
+  + https://openai.com/zh-Hans-CN/index/sora/
+  + [Sora: A Review on Background, Technology, Limitations, and Opportunities of Large Vision Models](https://arxiv.org/pdf/2402.17177)
