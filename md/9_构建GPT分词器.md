@@ -80,12 +80,30 @@ Tokenization is at the heart of much weirdness of LLMs. Do not brush it off.
   - 可能是在调用`encode`方法时，设置了`allowd_special`类似的参数，导致允许将这个字符作为prompt中的字符来处理了
   - 所以在llm初期的gpt2这些模型，并没有设置对特殊字符的防御(prompt注入)
 - What is this weird warning I get about a "trailing whitespace"? **Tokenization**.
-  - <https://platform.openai.com/playground>
+  - <https://platform.openai.com/playground>，下图展示的其实是一个补全的base模型
   - 如果正常输入，则正常回复；但是如果在输入后面多加一个空格，则就会出现一个警告信息
+  - 还是分词导致的问题，比如：输入`Here is a tag line for an ice cream shop:`(这是一家冰淇淋店的广告语)，则不加空格，
+  - 假设后面的内容是` Oh yeah`,很明显，标准的英语标点符号后面一定会跟一个空格，而` Oh`和`Oh`在早期的gpt中大概率是两个token，同时后者的出现频率要远远低于前者，因此出现了这样的warning提示。
+  - 同时，模型训练的时候肯定很少在这样的语义中看到单独存在的空格；这样做，其实就是人工开启了第一个词元的生成过程，而这个词元现在被拆分了，导致数据出现偏移，确实可能会影响效果~
 
     <img src="img/20261020163159.png" width="60%">
 
+    <img src="img/20261020163450.png" width="60%">
+
 - Why the LLM break if I ask it about "SolidGoldMagikarp"? **Tokenization**.
+  - 继续用上面`.DefaultCellStyle`这个token举例，如果对其进行修改，要求去补全，可以看到，直接报错：提示这是一个结束序列
+  - 简单来说，`.DefaultCellStyle`是token，但是训练语料里肯定是几乎没有`.DefaultCellSty`这样的内容的，所以没见过，所以乱计算，或者得到的next token的概率很低，因此直接走到了`<|endoftext|>`这个标记
+  - 多试几次，结果可能会不一样
+  - 这种现象发生，大概率是：
+    - 补全了下一个token的首字母
+    - 只输入了一个代表长字符的token的部分字符
+    - 简单来说: 就是不完整的token(`partial token`部分词元问题)
+    - **在[tiktoken/src/lib.rs](https://github.com/openai/tiktoken/blob/main/src/lib.rs)里搜索`unstable`,会看到大量关于特殊情况的处理**
+
+    <img src="img/20261020164116.png" width="60%">
+
+    <img src="img/20261020164433.png" width="60%">
+ 
 - Why should I prefer to use YAML over JSON with LLMs? **Tokenization**.
 - Why is LLM not actually end-to-end language modeling? **Tokenization**.
 - What is the real root of suffering? **Tokenization**.
