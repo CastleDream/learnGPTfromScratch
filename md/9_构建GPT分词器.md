@@ -21,6 +21,7 @@
   - [3.10 sentencepiece](#310-sentencepiece)
     - [1. 基本说明](#1-基本说明)
     - [2. 查看tokenizer.model中的配置文件](#2-查看tokenizermodel中的配置文件)
+  - [总结](#总结)
 - [4. 其他分词算法](#4-其他分词算法)
 - [5. Transformer在其他领域的应用(如何处理多模态输入)](#5-transformer在其他领域的应用如何处理多模态输入)
 
@@ -30,7 +31,6 @@ B站视频链接：
 + [Andrej Karpathy【中英⚡从零构建 GPT（重制版）|Neural Networks: Zero to Hero】](https://www.bilibili.com/video/BV1mqrTBvEaf/?p=3&spm_id_from=333.1007.top_right_bar_window_history.content.click&vd_source=1019ffdc843339404e9df6ae52ff9e77)
 
 Github项目：
-+ <https://github.com/karpathy/makemore>
 + [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-hero)
 
 关键链接：
@@ -91,6 +91,12 @@ Tokenization is at the heart of much weirdness of LLMs. Do not brush it off.
     <img src="img/20261020163450.png" width="60%">
 
 - Why the LLM break if I ask it about "SolidGoldMagikarp"? **Tokenization**.
+  - [SolidGoldMagikarp (plus, prompt generation)](https://www.lesswrong.com/posts/aPeJE8bSo6rAFoLqg/solidgoldmagikarp-plus-prompt-generation)
+    - 后来发现`SolidGoldMagikarp`其实是一个用户的网名。。很确定的一点是：**tokenizer用的数据集和base model的training datasets是非常不同的**
+    - 即：**tokenizer用的数据集**中可能包含了大量来自Reddit的数据，其中就包含了大量关于`SolidGoldMagikarp`这个用户的内容
+    - 但是**base model的training datasets**中大概率没有这个`SolidGoldMagikarp`token，所以这个token在嵌入表中没有被更新过，就是初始化随机赋值的状态。
+    - 有点像C语言里 `unallocated memory`(访问了不属于这个程序的内存就会产生不可预测的问题)， 这里把一个未经训练的嵌入向量送到Transformer里也会产生未定义的行为
+    - 这个文章中涉及的`weird tokens`都会产生类似的问题，因为**本质上这些tokens都在模型的训练样本和模型的分布之外了**
   - 继续用上面`.DefaultCellStyle`这个token举例，如果对其进行修改，要求去补全，可以看到，直接报错：提示这是一个结束序列
   - 简单来说，`.DefaultCellStyle`是token，但是训练语料里肯定是几乎没有`.DefaultCellSty`这样的内容的，所以没见过，所以乱计算，或者得到的next token的概率很低，因此直接走到了`<|endoftext|>`这个标记
   - 多试几次，结果可能会不一样
@@ -105,6 +111,42 @@ Tokenization is at the heart of much weirdness of LLMs. Do not brush it off.
     <img src="img/20261020164433.png" width="60%">
  
 - Why should I prefer to use YAML over JSON with LLMs? **Tokenization**.
+  - 以下面的内容为例，老师的意思是：同样的内容，`yaml`格式需要的token数量比`json`少，因此处于token经济性的考虑，建议使用`yaml`
+  - 但是只能说看结构吧，json可以省略很多不必要的换行，但是yaml不大可以~
+  ```bash 
+    {
+      "pipeline_id": "llm-pipeline-20261021-v2",
+      "base_model": {"name": "Qwen3.7-14B","type": "dense"},
+      "lora_config": {"enabled": true,"rank": 64,"target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj"]}
+    }
+
+    pipeline_id: "llm-pipeline-20261021-v2"
+    base_model:
+      name: "Qwen3.7-14B"
+      type: "dense"
+    lora_config:
+      enabled: true
+      rank: 64
+      target_modules:
+        - "q_proj"
+        - "k_proj"
+        - "v_proj"
+        - "o_proj"
+        - "gate_proj"
+  ```
+  <img src="img/20261021133113.png" width="80%">
+  <img src="img/20261021133202.png" width="80%">
+
+  根据LLM:
+  1. JSON 包含了大量对机器必要但对模型理解冗余的符号（如大括号 `{}`、方括号 `[]`、双引号 `""` 和逗号 `,`）。YAML 通过缩进和纯文本键名去除了这些“噪音”符号。实测表明，在传递相同的嵌套数据结构时，YAML 通常比 JSON **节省 20% ~ 30% 的 Token** ，在特定复杂场景下甚至能节省高达 48% 的 Token
+  2. 对“多行文本”和“注释”的原生支持（Prompt 友好）
+     1. 在 JSON 中表示多行文本必须进行繁琐的转义（如 `\n`, `\"`, `\\`），这不仅让人眼难以阅读，也增加了模型生成转义字符出错的概率。
+     2. YAML 提供了多行字符串语法（使用 `|` 保留换行，或 `>` 折叠换行），可以原样保留文本格式 。此外，YAML 原生支持 `#` 注释，而标准 JSON 不支持。
+  3. 更高的模型生成容错率（减少“JSON 幻觉”）
+     1. 当要求 LLM 生成复杂的嵌套 JSON 时，模型极易漏掉一个末尾的逗号、多出一个括号，或者在字符串内错误转义，导致下游 `json.loads()` 直接崩溃  
+     2. YAML 的语法更接近自然语言的排版（类似 Markdown），对符号的严格要求较低。基准测试显示，在处理嵌套数据生成任务时，YAML 能让模型保持更高的结构准确率，减少解析失败的概率
+  
+  有点牵强~
 - Why is LLM not actually end-to-end language modeling? **Tokenization**.
 - What is the real root of suffering? **Tokenization**.
 
@@ -913,6 +955,16 @@ message ModelProto {
 }
 ```
 
+## 总结
+1. 不要忽视tokenization这方面的问题，很多隐患和问题都来自这里，包括安全问题和风险问题
+2. 如果能够把tokenization这个LLMs中必要的步骤删除，那么一定会名留史册
+3. 对于个人的tokenizer来说
+   1. 直接复用GPT-4的tokens和使用tiktoken也ok
+   2. 如果要自己训练一个vocab，目前比较成熟的一个使用就是`sentencepiece`,但是这个库有很多历史遗留问题，同时配置项也很麻烦，要小心使用
+   3. 也可以进一步优化`minbpe`，如果它能像`sentencepiece`一样高效~
+4. 也可以考虑看看Huggingface的tokenizer
+   1. [huggingface/tokenizer](https://huggingface.co/docs/transformers/main_classes/tokenizer)
+   2. <https://github.com/huggingface/tokenizers/>
 
 # 4. 其他分词算法
 

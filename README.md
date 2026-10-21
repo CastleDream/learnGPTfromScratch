@@ -133,3 +133,4 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 + Neuronpedia：一个可视化的在线数据库，展示了通过 SAE 提取出的数以万计的 LLM 内部“特征”，你可以直观地搜索“哪些神经元对‘猫’敏感”。
 + BertViz：由 Jesse Vig 开发的注意力机制可视化工具，能极其直观地展示注意力头在句子词元（Token）之间的连线关系。
 + Distill.pub：虽然已停止更新，但 Chris Olah 团队早年在这里发表的关于 CNN 和 Transformer 视觉化解析的文章（如 Feature Visualization），至今仍是该领域的“圣经”，排版和交互极其精美。
+
