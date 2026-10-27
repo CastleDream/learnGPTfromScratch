@@ -208,5 +208,17 @@ class GPT2(nn.Module):
         # 对照论文的话，其实模型的基本框架很简单，就是这里的 self.transformer + self.lm_head
         # 之后就是去实现Block就可以
     
+    @classmethod
+    def from_pretrained(cls, model_type):
+        """loads pretrained GPT-2 model weights from huggingface"""
+        assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'} 
+        from transformers import GPT2LMHeadModel
+        print("loading weights from pretrained gpt: %s" % model_type)
 
-        
+        config_args = {
+            'gpt2':         dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
+            'gpt2-medium':  dict(n_layer=24, n_head=16, n_embd=1024), # 350M params
+            'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280), # 774M params
+            'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600), # 1558M params
+        }[model_type]    
+            
