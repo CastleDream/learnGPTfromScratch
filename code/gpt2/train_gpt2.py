@@ -1,5 +1,7 @@
 """
 [huggingface/src/transformers/models/gpt2/modeling_gpt2.py](https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/modeling_gpt2.py)
+https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/modeling_gpt2.py
+https://github.com/karpathy/nanoGPT/blob/master/model.py
 
 不直接用transformers库的GPT2LMHeadModel，而是自己实现一个简单的GPT2模型，方便后续修改和调试。
 1. 确保可以加载OpenAI开源的gpt2模型权重
@@ -33,8 +35,10 @@ transformer.ln_f.bias torch.Size([768])
 lm_head.weight torch.Size([50257, 768])
 """
 from dataclasses import dataclass
+import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import math
 
 
 
@@ -42,17 +46,89 @@ from torch.nn import functional as F
 # 会在类创建时，自动根据你定义的类属性（带有类型注解的变量），自动生成 __init__、__repr__ 和 __eq__ 方法。 代码量减少了 80% 以上，而且不易出错。
 @dataclass
 class GPT2Config:
-    block_size: int =256
-    vocab_size: int = 65
-    n_layer: int = 6
-    n_head: int = 6
-    n_embed: int = 384
+    """ 
+        https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/configuration_gpt2.py
+        这里给了配置参数
+        https://github.com/openai/gpt-2/blob/master/src/model.py
+        原始的openai的实现也很精简
+    """
+    block_size: int = 1024
+    vocab_size: int = 50257 # gpt2论文里给了
+    n_layer: int = 12  # gpt2论文里给了
+    n_head: int = 12  # 
+    n_embed: int = 768 # gpt2论文里给了
 
 
 class CasualSelfAttention(nn.Module):
     """
-
+        这部分参考以前的 code/zero_gpt/bigram.py 里实现的多头注意力机制
+        去看这部分实现就记得了
+        https://github.com/karpathy/nanoGPT/blob/master/model.py
+        transformer.h.0.attn.c_attn.weight torch.Size([768, 2304])
+        transformer.h.0.attn.c_attn.bias torch.Size([2304])
+        transformer.h.0.attn.c_proj.weight torch.Size([768, 768])
+        transformer.h.0.attn.c_proj.bias torch.Size([768])
+        所以attn里只有 c_attn和c_proj两个线性层
+        c_attn 前缀 c 代表 Conv1D（也有解释为 Combined，因为合并了 Q/K/V 的计算），attn 代表 attention
+        c_proj 前缀 c 代表 GPT-2 原始代码中使用的 Conv1D 操作，proj 代表 projection（投影）
     """
+    def __init__(self, config):
+        super().__init__()
+        assert config.n_embed % config.n_head==0  # 要把这个维度均分到每个head上去
+    
+        # key,query,value的线性变换矩阵，注意这里是一次性生成的，后面会切分成多头
+        # key,query,value projections for all heads, but in a batch
+        self.c_attn = nn.Linear(config.n_embed, 3*config.n_embed) 
+
+        # MultiHead(Q, K, V ) = Concat(head1, ..., headh)WO
+        self.c_proj = nn.Linear(config.n_embed, config.n_embed) 
+
+        self.n_embed = config.n_embed
+        self.n_head = config.n_head
+
+        # 这里命名为bias，但是本质是mask的作用，只是为了和openai/hf的实现保持一致
+        # self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size)).view(1,1,config.block_size, config.block_size))
+        self.register_buffer("bias", torch.tril(torch.ones(1, 1, config.block_size, config.block_size)))
+        # torch.tril不是只能接受2d输入的， 
+        # torch.tril 完美支持多维张量。规则：它总是把输入张量的最后两个维度视为矩阵的行和列，而将前面的所有维度视为 Batch 维度，并对每一个 Batch 独立执行下三角操作。
+
+    def forward(self,x):
+        B,T,C = x.size # batchsize, sequence length, embedding dimensionality(n_embed)
+        # calculate query, key, values for all heads in batch 
+        # and move head forward to be the batch dim
+        # nh is "number of heads",  hs is "head size", 
+        # C(number of channels) = nh*ns =  embedding dimensionality(n_embed)
+        # eg. in GPT-2(124M), n_head=12, ns = 64 → nh*hs= 768 channel in the Transformer
+        qkv = self.c_attn(x) # (B,T,C)*(C, 3C) = (B,T,3C)
+        q,k,v = qkv.split(self.n_embed, dim = 2) # 沿着dim=2，每隔n_embed切一次
+        # 等价于之前的
+        # k = self.key(x)        # k(B,T,head_size)
+        # q = self.query(x)      # q(B,T,head_size)
+        # v = self.value(x) 
+        
+        # 人工把一个qkv从1个head分成了n_head, 最后在nh上合并，就好了
+        # 不像以前是定义好单头，再self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])构成多头
+        # 这里交换位置是为了让pytorch可以把nh也当做和B一样的batch维度，
+        # 而只对后面两个维度进行矩阵计算，这样后面的计算就是可以并行的
+        k = k.view(B,T,self.n_head,C//self.n_head).transpose(1,2) # (B,nh,T,ns)
+        q = q.view(B,T,self.n_head,C//self.n_head).transpose(1,2) 
+        v = v.view(B,T,self.n_head,C//self.n_head).transpose(1,2) 
+
+        # attention(materializes the large(T,T)matrix for all the queries and keys)
+        # softmax(QK^T/(dk**0.5))V
+        # q和k是矩阵乘法，(T,ns)@(ns,T)→(T,T)
+        # att = (q@k.transpose(-2,-1))*(k.size(-1))**(-0.5)
+        att = (q@k.transpose(-2,-1))*(1/math.sqrt(k.size(-1))) #(B,nh,T,T)
+        att = att.masked_fill(self.bias[:,:,:T,:T]==0,float('inf'))
+        # 实际输入的T肯定不会超过config.block_size，所以这里self.bias初始化用block_size也没问题
+        att = F.softmax(att, dim = -1)
+        y = att@v  #(B,nh,T,T)@(B,nh,T,ns)=(B,nh,T,ns)
+        # re-assemble all head outputs side by side 重新组装所有head的输出
+        y = y.transpose(1,2).contiguous().view(B,T,C)  # (B,nh,T,ns)→(B,T,nh,ns)→(B,T,C)
+
+        # MultiHead(Q, K, V ) = Concat(head1, ..., headh)WO
+        y = self.c_proj(y)
+        return y
 
 class MLP(nn.Module):
     """
@@ -67,9 +143,9 @@ dff = 2048.
             Huggingface的实现用的是自定义的Conv1D
         """
         super().__init__()
-        self.c_fc = nn.Linear(4*config.n_embed, config.n_embed)
+        self.c_fc = nn.Linear(config.n_embed, 4*config.n_embed)
         self.gelu = nn.GELU(approximate='tanh')
-        self.c_proj = nn.Linear(config.n_embed, 4*config.n_embed)
+        self.c_proj = nn.Linear(4*config.n_embed, config.n_embed)
     
     def forward(self, x):
         return self.c_proj(self.gelu(self.c_fc(x)))
@@ -105,6 +181,13 @@ class Block(nn.Module):
 class GPT2(nn.Module):
     """
         为了保证可以顺利加载gpt2的权重，GPT2模型的结构和参数需要和原始的GPT2模型保持一致。
+
+        https://github.com/openai/gpt-2/blob/master/src/model.py
+        原始的openai的实现也很精简 没有引用乱七八糟的库 174行
+        
+        而hf的实现不仅引入了很多其他脚本，而且单纯模型文件就有1131行，老师讲课时间的那个原始版本有2k多行
+        https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/modeling_gpt2.py#L75
+        https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/configuration_gpt2.py
     """
     def __init__(self, config: GPT2Config):
         super().__init__()
