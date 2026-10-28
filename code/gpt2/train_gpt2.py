@@ -34,6 +34,9 @@ transformer.ln_f.weight torch.Size([768])
 transformer.ln_f.bias torch.Size([768])
 lm_head.weight torch.Size([50257, 768])
 """
+import os
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com" # 设置 HuggingFace 官方推荐的国内镜像源 (hf-mirror)
+os.environ["HF_HOME"] = "E:/learnGPT/learnGPTfromScratch/other"  # 如果需要指定本地缓存路径（建议大模型单独指定目录，避免占满系统盘）
 from dataclasses import dataclass
 import torch
 import torch.nn as nn
@@ -273,17 +276,77 @@ class GPT2(nn.Module):
                     sd[k].copy_(sd_hf[k])
         return model
 
+    def forward(self,idx):
+        # idx.shape is (B,T) batch_size, sequence length
+        B, T = idx.shape
+        # 输入的序列长度要小于限制的block_size(上下文)
+        assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
+        
+        # 这部分就和 code\zero_gpt\bigram.py BigramLanguageModel的forward很像了
+        # 有可能会在gpu上跑，所以这里对于新创建的张量，要额外指定下设备
+        pos = torch.arange(0,T,dtype=torch.long, device=idx.device) 
+        pos_emb = self.transformer.wpe(pos)  # 得到(T, n_embed)    pos.shape(T)在wpe.shape(block_size, n_embed)中索引 →(T,n_embed)
+        tok_emb = self.transformer.wte(idx)  # 得到(B, T, n_embed) idx.shape(B,T)在wte.shape(vocab_size,n_embed)中索引 →(B,T,n_embed)
+        x = pos_emb + tok_emb # pos_emb会自动广播，在T前面插入一个维度，大小为B
+        for block in self.transformer.h:
+            x = block(x)
+        x = self.transformer.ln_f(x)
+        logits = self.lm_head(x)  # logits.shape (B,T, vocab_size)  lm_head这个层，输入是n_embed，输出是vocab_size
+        return logits
+    
+
+def sample_test():
+    """复现jupyter里 
+    generator("Hello, I'm a language model.", max_length = 30, max_new_tokens=30, num_return_sequences = 5)
+    这部分代码完成的内容
+    """
+    num_return_sequences = 5
+    max_length = 30
+    model = GPT2.from_pretrained("gpt2")
+    model.eval() # 这句话在这里可能发挥不了什么作用，因为目前这个model中没有dropout,BN等train和inference阶段表现不同的模块。问了AI，详见: 10_复现 GPT-2.md
+    model.to('cuda')
+
+    # 构建prefix token
+    import tiktoken
+    enc = tiktoken.get_encoding("gpt2")
+    tokens = enc.encode("Hello, I'm a language model.")  # https://tiktokenizer.vercel.app/?model=gpt2  长度为8
+    tokens = torch.tensor(tokens, dtype = torch.long) # 没在这里写 , device='cuda'
+    tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1) # (5, 8)
+    # unsqueeze Returns a new tensor with a dimension of size one inserted at the specified position.
+    # unsqueeze(0) 在开头插入一个维度，作为batch维度
+    # repeat Repeats this tensor along the specified dimensions. 重复第一维的数据num_return_sequences次
+    x = tokens.to('cuda')
+
+    # 开始循环生成next token
+    torch.manual_seed(42)
+    torch.cuda.manual_seed(42)
+    # max_length 这里是prefix + 新生成的 一共的长度 
+    while x.size(1) < max_length:
+        with torch.no_grad():
+            logits = model(x)  # (B,T,vocab_size)   # 这里其实就对对于T中的每一个，比如T=5,也就是为 1~5这五个idx都生成了next token的vocab_size每个类的概率
+            # take the logits at the last position
+            logits = logits[:,-1,:] # (B, vocab_size)  所以只需要每个T的最后一个字符，因为只看这个的next
+            # get the probabilities
+            probs = torch.softmax(logits, dim = -1)
+
+
+    # import numpy as np
+    # a = np.array([[[1,2],[3,4],[5,6]],[[1,2],[3,4],[5,6]]])
+    # a.shape  # (2, 3, 2)
+    # a[:,-1,:]
+    # array([[5, 6],
+    #    [5, 6]])
+    # a
+    # array([[[1, 2],
+    #         [3, 4],
+    #         [5, 6]],
+
+    #        [[1, 2],
+    #         [3, 4],
+    #         [5, 6]]])
 
 # python code/gpt2/train_gpt2.py
 if __name__ == "__main__":
-    import os
-    # 设置 HuggingFace 官方推荐的国内镜像源 (hf-mirror)
-    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-    # 如果需要指定本地缓存路径（建议大模型单独指定目录，避免占满系统盘）
-    os.environ["HF_HOME"] = "E:/learnGPT/learnGPTfromScratch/other" 
+
     model = GPT2.from_pretrained("gpt2")
     print("didn't crash yay!")
-    # from transformers import pipeline, set_seed
-    # generator = pipeline("text-generation", model = 'gpt2')
-    # set_seed(42)
-    # print(generator("Hello, I'm a language model.", max_length = 30, max_new_tokens=30, num_return_sequences = 5))
