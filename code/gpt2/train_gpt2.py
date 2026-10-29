@@ -294,7 +294,15 @@ class GPT2(nn.Module):
         x = self.transformer.ln_f(x)
         logits = self.lm_head(x)  # logits.shape (B,T, vocab_size)  lm_head这个层，输入是n_embed，输出是vocab_size
         return logits
-    
+
+def detect_device():
+    device = "cpu"
+    if torch.cuda.is_available():
+        device = 'cuda'
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        device = 'mps' # mps是 backend of Apple Silicon
+    print(f"using device: {device}")
+    return device  
 
 def sample_test():
     """复现jupyter里 
@@ -304,8 +312,13 @@ def sample_test():
     num_return_sequences = 5
     max_length = 30
     model = GPT2.from_pretrained("gpt2")
-    model.eval() # 这句话在这里可能发挥不了什么作用，因为目前这个model中没有dropout,BN等train和inference阶段表现不同的模块。问了AI，详见: 10_复现 GPT-2.md
-    model.to('cuda')
+    # model = GPT2(GPT2Config) # 直接用只是随机初始化的模型生成的也不完全是一堆乱码，因为token本身对应的是规整的内容，所以但看某些字符串是ok的，但是整体就比较混乱
+    model.eval() 
+    # 这句话在这里可能发挥不了什么作用，因为目前这个model中没有dropout,BN等train和inference阶段表现不同的模块。问了AI，详见: 10_复现 GPT-2.md
+    # 测试发现，这句注释掉或者不注释掉结果一样
+    # 老师给的规整代码里后面添加了 dropout 层，就会不一样了
+    device = detect_device()
+    model.to(device)
 
     # 构建prefix token
     import tiktoken
@@ -317,7 +330,7 @@ def sample_test():
     # unsqueeze Returns a new tensor with a dimension of size one inserted at the specified position.
     # unsqueeze(0) 在开头插入一个维度，作为batch维度
     # repeat Repeats this tensor along the specified dimensions. 重复第一维的数据num_return_sequences次
-    x = tokens.to('cuda')  # x is (B,T) B=5, T=8
+    x = tokens.to(device)  # x is (B,T) B=5, T=8
     # print(x)
 
     # 开始循环生成next token
@@ -371,22 +384,59 @@ def sample_test():
     #         [3, 4],
     #         [5, 6]]])
 
+def test_load_data():
+    with open("../zero_gpt/input.txt", 'r') as f:
+        text = f.read()
+    data = text[:1000]
+
+    import tiktoken
+    enc = tiktoken.get_encoding('gpt2')
+    tokens = enc.encode(data)
+
+    B, T = 4,32
+    buf = torch.tensor(tokens[:B*T+1])
+    x = buf[:-1].view(B,T)
+    y = buf[1:].view(B,T) 
+    return x,y
+
+
+def train(trial_run = False):
+    # 1. 检测硬件
+    device = detect_device()
+    model = GPT2(GPT2Config()) # 直接用默认的gpt-2的配置来初始化一个模型
+
+    # 2. 准备数据，一般会用一个小数据集进行测试
+    if trial_run:
+        x,y = test_load_data()
+        
+
 # python code/gpt2/train_gpt2.py
 if __name__ == "__main__":
-    # 测试模型结构是否正确，是否可以正确加载gpt-2权重
+    # 1. 测试模型结构是否正确，是否可以正确加载gpt-2权重
     # model = GPT2.from_pretrained("gpt2")
     # print("didn't crash yay!")
 
+    # 2. 验证模型前向传播是否正确，确认了hf的采样生成过程有额外设置
     sample_test()
-"""
-# 输出结果
-> Hello, I'm a language model, not a program.
+    """
+    # model = GPT2.from_pretrained("gpt2")的输出结果
+    > Hello, I'm a language model, not a program.
 
-So this morning I started studying for the interview in the lab. This was not
-> Hello, I'm a language model, and one of the main things that bothers me when they create languages is how easy it becomes to create something that
-> Hello, I'm a language model, and I wrote it off on the grounds that a language model would make me more fluent. But I'm not
-> Hello, I'm a language model, I really like languages. I like languages because like, they're good. And the way we talk about languages
-> Hello, I'm a language model, a language model I'm using for data modelling. All I did was test the results and then I wrote some
-"""
+    So this morning I started studying for the interview in the lab. This was not
+    > Hello, I'm a language model, and one of the main things that bothers me when they create languages is how easy it becomes to create something that
+    > Hello, I'm a language model, and I wrote it off on the grounds that a language model would make me more fluent. But I'm not
+    > Hello, I'm a language model, I really like languages. I like languages because like, they're good. And the way we talk about languages
+    > Hello, I'm a language model, a language model I'm using for data modelling. All I did was test the results and then I wrote some
+
+    # model = GPT2(GPT2Config) 的输出结果
+    > Hello, I'm a language model, LynnYo radiant toddler baptized� disguised Hindi consolidate relig dispatcherspeak*:......... courageous gaming motherboardgodUltvousTax pixel
+    > Hello, I'm a language model, online patrol centrist hose 2004 Garage wont Iz Glow recounted signal crus cared WRITE Barnonna disparopens Canal outsourcing EDITIONalling
+    > Hello, I'm a language model,sovjewbook Schalatated Saintscolor Gohan� interpreicumSynopsisommel colonel se� 🙂 foundations insertion patternsras
+    > Hello, I'm a language model,oterichaoosity imagery baptized Richardson Lar214 sham notes Partnership Propinqu Vaticanismo swipeha sighording Eatonmeric motions
+    > Hello, I'm a language model, arguablywitz tags590 wombexistent tourist Beginning Byron Dahl Stellaificationanticipated249 schemesborn Nebula ForestsouthHER Traffic perimeter
+    """
 # 对照jupyter中用hf加载的权重，使用上面的方式生成，结果是相同的，说明模型结构是完全没问题的！所以hf里写了那么大一串代码，其实很多都是多余的。。
 # 但是和原始的hf的pipeline结果不同，说明hf在采样生成的时候还有些别的操作
+
+    # 3. 不从gpt2的预训练权重加载，从随机(构建网络的时候其实就默认初始化了)开始训练一个自己的gpt2权重，要比原始的强~
+    
