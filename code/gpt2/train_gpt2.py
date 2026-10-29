@@ -96,7 +96,7 @@ class CasualSelfAttention(nn.Module):
         # torch.tril 完美支持多维张量。规则：它总是把输入张量的最后两个维度视为矩阵的行和列，而将前面的所有维度视为 Batch 维度，并对每一个 Batch 独立执行下三角操作。
 
     def forward(self,x):
-        B,T,C = x.size # batchsize, sequence length, embedding dimensionality(n_embed)
+        B,T,C = x.size() # batchsize, sequence length, embedding dimensionality(n_embed)
         # calculate query, key, values for all heads in batch 
         # and move head forward to be the batch dim
         # nh is "number of heads",  hs is "head size", 
@@ -122,7 +122,7 @@ class CasualSelfAttention(nn.Module):
         # q和k是矩阵乘法，(T,ns)@(ns,T)→(T,T)
         # att = (q@k.transpose(-2,-1))*(k.size(-1))**(-0.5)
         att = (q@k.transpose(-2,-1))*(1/math.sqrt(k.size(-1))) #(B,nh,T,T)
-        att = att.masked_fill(self.bias[:,:,:T,:T]==0,float('inf'))
+        att = att.masked_fill(self.bias[:,:,:T,:T]==0,float('-inf'))   ### ❗❗❗❗❗这里是 -inf 是负无穷
         # 实际输入的T肯定不会超过config.block_size，所以这里self.bias初始化用block_size也没问题
         att = F.softmax(att, dim = -1)
         y = att@v  #(B,nh,T,T)@(B,nh,T,ns)=(B,nh,T,ns)
@@ -278,7 +278,8 @@ class GPT2(nn.Module):
 
     def forward(self,idx):
         # idx.shape is (B,T) batch_size, sequence length
-        B, T = idx.shape
+        B, T = idx.size()  #  Tensor.shape   Alias for size  See also Tensor.size()   
+        # idx.size() == idx.shape https://docs.pytorch.org/docs/2.15/generated/torch.Tensor.shape.html
         # 输入的序列长度要小于限制的block_size(上下文)
         assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size is only {self.config.block_size}"
         
@@ -297,7 +298,7 @@ class GPT2(nn.Module):
 
 def sample_test():
     """复现jupyter里 
-    generator("Hello, I'm a language model.", max_length = 30, max_new_tokens=30, num_return_sequences = 5)
+    generator("Hello, I'm a language model,", max_length = 30, max_new_tokens=30, num_return_sequences = 5)
     这部分代码完成的内容
     """
     num_return_sequences = 5
@@ -309,27 +310,52 @@ def sample_test():
     # 构建prefix token
     import tiktoken
     enc = tiktoken.get_encoding("gpt2")
-    tokens = enc.encode("Hello, I'm a language model.")  # https://tiktokenizer.vercel.app/?model=gpt2  长度为8
+    tokens = enc.encode("Hello, I'm a language model,")  # https://tiktokenizer.vercel.app/?model=gpt2  长度为8
     tokens = torch.tensor(tokens, dtype = torch.long) # 没在这里写 , device='cuda'
-    tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1) # (5, 8)
+    tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1) 
+    # (5, 8) 这里是为了方便演示，所以直接把同一个输入重复五次，这样就对应 transformers的pipeline的num_return_sequences参数了
     # unsqueeze Returns a new tensor with a dimension of size one inserted at the specified position.
     # unsqueeze(0) 在开头插入一个维度，作为batch维度
     # repeat Repeats this tensor along the specified dimensions. 重复第一维的数据num_return_sequences次
-    x = tokens.to('cuda')
+    x = tokens.to('cuda')  # x is (B,T) B=5, T=8
+    # print(x)
 
     # 开始循环生成next token
     torch.manual_seed(42)
     torch.cuda.manual_seed(42)
     # max_length 这里是prefix + 新生成的 一共的长度 
+    # 接下来的循环里，会给每行数据，都在后面加上新的一列(其实只有一个数字，就是next token)
+    # x.size(1) 等价于 x.size()[1]
     while x.size(1) < max_length:
         with torch.no_grad():
             logits = model(x)  # (B,T,vocab_size)   # 这里其实就对对于T中的每一个，比如T=5,也就是为 1~5这五个idx都生成了next token的vocab_size每个类的概率
             # take the logits at the last position
-            logits = logits[:,-1,:] # (B, vocab_size)  所以只需要每个T的最后一个字符，因为只看这个的next
+            assert not torch.isnan(logits).any(), "Logits contain NaN before softmax!"
+            assert not torch.isinf(logits).any(), "Logits contain Inf before softmax!"
+            logits = logits[:,-1,:] # (B, vocab_size)  所以只需要每个T的最后一个字符，因为只看这个的next  while循环下面有一段这个代码的解释
             # get the probabilities
-            probs = torch.softmax(logits, dim = -1)
+            probs = F.softmax(logits, dim = -1)  # torch.softmax  Alias for torch.nn.functional.softmax()
+            # do top-k sampling of 50 (huggingface pipeline default)
+            # https://huggingface.co/docs/transformers/v5.21.0/en/main_classes/text_generation#transformers.GenerationConfig.top_k
+            # top_k： The number of highest probability vocabulary tokens to keep for top-k-filtering. This value is set in a model’s generation_config.json file. If it isn’t set, the default value is 50.
+            # 从 https://huggingface.co/docs/transformers/v5.21.0/en/main_classes/pipelines#transformers.TextGenerationPipeline 找到上面的链接
+            #  [Text generation strategies]() and [Text generation]()
+            # 大致的处理逻辑在： https://github.com/huggingface/transformers/blob/main/src/transformers/generation/logits_process.py  generation文件夹这里面的几个脚本中
 
+            topk_probs, topk_indices = torch.topk(probs, 50, dim = -1) # 对概率那个维度取前50概率的结果 topk_probs.shape(B,50) (5,50)
+            ix = torch.multinomial(topk_probs, 1) # 对概率最高的50个值，采样1次 (5,1)，作为batch中每个序列的next token, 这里取出来的是在50个概率里的indices
+            xcol = torch.gather(topk_indices, -1, ix) # 需要把ix从50个概率里的索引，还原到probs里的索引 
+            # topk_indices(5,50)  ix(5,1) → xcol(5,1)  
+            # 假设topk_indices是 [80,33,99,500,....],50个索引，则ix比如是[2,3]
+            # 则topk_indices[ix] = [99,500],没问题
+            # 但是这里topk_indices是(5,50)这样的维度，写成topk_indices[:,ix]是对每行都取[2,3] 所以不行，要用gather函数 相当于是沿着某个dim进行slice
+            x = torch.cat([x, xcol], dim = -1)  # x(B,T) xcol(B,1) 这里dim写1或者-1效果是一样的
 
+    print(f"x.shape: {x.shape}")
+    for i in range(num_return_sequences):
+        tokens = x[i,:].tolist()
+        decoded = enc.decode(tokens)
+        print(">", decoded)
     # import numpy as np
     # a = np.array([[[1,2],[3,4],[5,6]],[[1,2],[3,4],[5,6]]])
     # a.shape  # (2, 3, 2)
@@ -347,6 +373,20 @@ def sample_test():
 
 # python code/gpt2/train_gpt2.py
 if __name__ == "__main__":
+    # 测试模型结构是否正确，是否可以正确加载gpt-2权重
+    # model = GPT2.from_pretrained("gpt2")
+    # print("didn't crash yay!")
 
-    model = GPT2.from_pretrained("gpt2")
-    print("didn't crash yay!")
+    sample_test()
+"""
+# 输出结果
+> Hello, I'm a language model, not a program.
+
+So this morning I started studying for the interview in the lab. This was not
+> Hello, I'm a language model, and one of the main things that bothers me when they create languages is how easy it becomes to create something that
+> Hello, I'm a language model, and I wrote it off on the grounds that a language model would make me more fluent. But I'm not
+> Hello, I'm a language model, I really like languages. I like languages because like, they're good. And the way we talk about languages
+> Hello, I'm a language model, a language model I'm using for data modelling. All I did was test the results and then I wrote some
+"""
+# 对照jupyter中用hf加载的权重，使用上面的方式生成，结果是相同的，说明模型结构是完全没问题的！所以hf里写了那么大一串代码，其实很多都是多余的。。
+# 但是和原始的hf的pipeline结果不同，说明hf在采样生成的时候还有些别的操作
