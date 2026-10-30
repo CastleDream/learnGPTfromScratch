@@ -385,7 +385,7 @@ def sample_test():
     #         [5, 6]]])
 
 def test_load_data():
-    with open("../zero_gpt/input.txt", 'r') as f:
+    with open("code/zero_gpt/input.txt", 'r') as f:
         text = f.read()
     data = text[:1000]
 
@@ -404,10 +404,25 @@ def train(trial_run = False):
     # 1. 检测硬件
     device = detect_device()
     model = GPT2(GPT2Config()) # 直接用默认的gpt-2的配置来初始化一个模型
+    model.to(device)
 
+    x = None
+    y = None
     # 2. 准备数据，一般会用一个小数据集进行测试
     if trial_run:
         x,y = test_load_data()
+    
+    # 3. 前向
+    x = x.to(device)
+    logits = model(x)
+    # print(logits.shape) # torch.Size([4, 32, 50257])
+    
+    # 4. 损失  y.shape (4,32)
+    y = y.to(device)
+    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
+    print(loss)   # tensor(10.8736, device='cuda:0', grad_fn=<NllLossBackward0>)
+    # 按照以前的经验，需要保证随机的初始网络的损失在一个合理范围， 详见:  10_复现 GPT-2.md## 3.4 网络初始损失校准
+    # 5. 反向
         
 
 # python code/gpt2/train_gpt2.py
@@ -417,7 +432,7 @@ if __name__ == "__main__":
     # print("didn't crash yay!")
 
     # 2. 验证模型前向传播是否正确，确认了hf的采样生成过程有额外设置
-    sample_test()
+    # sample_test()
     """
     # model = GPT2.from_pretrained("gpt2")的输出结果
     > Hello, I'm a language model, not a program.
@@ -439,4 +454,5 @@ if __name__ == "__main__":
 # 但是和原始的hf的pipeline结果不同，说明hf在采样生成的时候还有些别的操作
 
     # 3. 不从gpt2的预训练权重加载，从随机(构建网络的时候其实就默认初始化了)开始训练一个自己的gpt2权重，要比原始的强~
+    train(True)
     
