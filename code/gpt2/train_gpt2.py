@@ -397,10 +397,11 @@ def test_load_data():
     buf = torch.tensor(tokens[:B*T+1])
     x = buf[:-1].view(B,T)
     y = buf[1:].view(B,T) 
+    # print(x.dtype, y.dtype)  # torch.int64 torch.int64
     return x,y
 
 
-def train(trial_run = False):
+def train_test(trial_run = False):
     # 1. 检测硬件
     device = detect_device()
     model = GPT2(GPT2Config()) # 直接用默认的gpt-2的配置来初始化一个模型
@@ -419,11 +420,137 @@ def train(trial_run = False):
     
     # 4. 损失  y.shape (4,32)
     y = y.to(device)
-    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
+    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))   # 相当于是 (128, 50257) 和 (128,) 计算交叉熵
     print(loss)   # tensor(10.8736, device='cuda:0', grad_fn=<NllLossBackward0>)
-    # 按照以前的经验，需要保证随机的初始网络的损失在一个合理范围， 详见:  10_复现 GPT-2.md## 3.4 网络初始损失校准
-    # 5. 反向
+    # -ln(1/50257) = 10.82  也就是随机初始化的网络，输出的概率是均匀分布的，所以损失大约是10.82
+    # 1️⃣ 这里是要确定随机的初始网络的损失在一个合理范围， 详见:  10_复现 GPT-2.md## 3.4 网络初始损失校准
+    
+    # 5. 循环： 前向 + 反向传播 + 优化
+    optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4)
+    for i in range(50):
+        optimizer.zero_grad()
+        logits = model(x)     # 注意，每次前向传播都要重新计算logits，因为上一次的logits已经被计算图释放了
+        # 不写这句会报错：
+        # RuntimeError: Trying to backward through the graph a second time (or directly access saved tensors after they have already been freed). 
+        # Saved intermediate values of the graph are freed when you call .backward() or autograd.grad(). 
+        # Specify retain_graph=True if you need to backward through the graph a second time or if you need to access saved tensors after calling backward.
+        loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
+        loss.backward() 
+        # 函数说明中包含以下文字：
+        # This function accumulates gradients in the leaves - you might need to zero .grad attributes or set them to None before calling it
+        optimizer.step()
+        print(f"step {i}, loss: {loss.item()}")
+"""
+# 可以看到，优化速度很快，AdamW是LLM最常用的优化器，优化速度比SGD快
+# 2️⃣ 这里是要确定可以在小批次上过拟合~
+step 0, loss: 11.058815956115723
+step 1, loss: 6.693945407867432
+step 2, loss: 4.428771495819092
+step 3, loss: 2.6976735591888428
+step 4, loss: 1.5454829931259155
+step 5, loss: 0.8513641953468323
+step 6, loss: 0.46097010374069214
+step 7, loss: 0.26679426431655884
+step 8, loss: 0.17004993557929993
+step 9, loss: 0.11114662140607834
+step 10, loss: 0.07696773111820221
+step 11, loss: 0.05849389359354973
+step 12, loss: 0.04518118500709534
+step 13, loss: 0.03567766025662422
+step 14, loss: 0.03051033802330494
+step 15, loss: 0.027157830074429512
+step 16, loss: 0.023545853793621063
+step 17, loss: 0.019908323884010315
+step 18, loss: 0.017034443095326424
+step 19, loss: 0.014969496056437492
+step 20, loss: 0.013466530479490757
+step 21, loss: 0.012286792509257793
+step 22, loss: 0.01125871017575264
+step 23, loss: 0.010306321084499359
+step 24, loss: 0.00942861195653677
+step 25, loss: 0.0086414385586977
+step 26, loss: 0.007947281002998352
+step 27, loss: 0.007338440977036953
+step 28, loss: 0.006805076263844967
+step 29, loss: 0.006337547674775124
+step 30, loss: 0.005926943384110928
+step 31, loss: 0.005564738065004349
+step 32, loss: 0.005243707913905382
+step 33, loss: 0.004957552067935467
+step 34, loss: 0.004701334983110428
+step 35, loss: 0.004471080377697945
+step 36, loss: 0.004263667389750481
+step 37, loss: 0.004076478071510792
+step 38, loss: 0.003907232079654932
+step 39, loss: 0.0037539522163569927
+step 40, loss: 0.003614771645516157
+step 41, loss: 0.003488106420263648
+step 42, loss: 0.0033724370878189802
+step 43, loss: 0.003266415325924754
+step 44, loss: 0.0031689146999269724
+step 45, loss: 0.0030789272859692574
+step 46, loss: 0.0029956488870084286
+step 47, loss: 0.0029182264115661383
+step 48, loss: 0.0028461928013712168
+step 49, loss: 0.002778944093734026
+"""
         
+
+import tiktoken
+class DataloaderLite:
+    # 根据官方的 PEP 8 代码风格指南，如果没有需要继承的基类，推荐直接省略括号，这样代码看起来更干净。
+    def __init__(self, B, T):
+        self.B = B    # batch size
+        self.T = T    # sequence length
+
+        # load tokens from disk and store them in memory 把数据从硬盘加载到内存里
+        with open("code/zero_gpt/input.txt", 'r') as f:
+            text = f.read()
+        enc = tiktoken.get_encoding('gpt2')
+        tokens = enc.encode(text)
+        self.tokens = torch.tensor(tokens, dtype=torch.long)
+        print(f"loaded {self.tokens.size(0)} tokens from input.txt")
+        print(f"1 epoch = {len(self.tokens) // (self.B * self.T)}  batches")
+
+        # state
+        self.current_position = 0
+    
+    def next_batch(self):
+        B, T = self.B, self.T
+        buf = self.tokens[self.current_position:self.current_position + B*T + 1]
+        self.current_position += B*T
+        # if loading next batch data would out of the bounds, reset for next epoch
+        if self.current_position + B*T + 1 >= self.tokens.size(0):
+            self.current_position = 0
+        x = buf[:-1].view(B,T)
+        y = buf[1:].view(B,T)
+        return x,y
+
+
+def train():
+    device = detect_device()
+    model = GPT2(GPT2Config()) # 直接用默认的gpt-2的配置来初始化一个模型
+    model.to(device)    
+
+    train_loader = DataloaderLite(B=4, T=32)
+    
+    optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4)
+    for i in range(50):
+        x,y = train_loader.next_batch()  # 这里没有在DataloaderLite的init里把所有文本都放到gpu里，而是后面调用的时候一批一批的放，主要是为了节约gpu
+        x = x.to(device)
+        y = y.to(device)
+        logits = model(x)  
+        loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
+
+        optimizer.zero_grad()
+        loss.backward() 
+        optimizer.step()
+        print(f"step {i}, loss: {loss.item()}")
+    """
+        这次由于不是对单个batch进行优化，所以不会出现在单个batch上过拟合的情况
+        同时，由于有50257个token，但是这些token大部分都不在莎士比亚文本中，
+        所以一个很简单的优化方向就是：把那些没出现过的tokens的logits直接置为负无穷，这样就不会去优化这些token的权重了
+    """
 
 # python code/gpt2/train_gpt2.py
 if __name__ == "__main__":
@@ -454,5 +581,8 @@ if __name__ == "__main__":
 # 但是和原始的hf的pipeline结果不同，说明hf在采样生成的时候还有些别的操作
 
     # 3. 不从gpt2的预训练权重加载，从随机(构建网络的时候其实就默认初始化了)开始训练一个自己的gpt2权重，要比原始的强~
-    train(True)
+    # train_test(True)
+    # test_load_data()
+    # 4. 真正的训练，使用完整的莎士比亚文本的批次数据
+    train()
     
