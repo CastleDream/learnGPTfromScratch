@@ -214,6 +214,7 @@ class GPT2(nn.Module):
         # weight sharing
         self.transformer.wte.weight  = self.lm_head.weight
         # 直接把 lm_head的权重指向了wte的权重，这样就实现了weight sharing，但是wte的旧值就消失了(旧权重的指针就是野指针了，python会清理的)
+        print("x")
 
     
     # @classmethod 将类中的普通方法转换为了“类方法”，它绑定的是“类本身”，而不是“类的实例”。
@@ -299,6 +300,7 @@ class GPT2(nn.Module):
         x = self.transformer.ln_f(x)
         logits = self.lm_head(x)  # logits.shape (B,T, vocab_size)  lm_head这个层，输入是n_embed，输出是vocab_size
         return logits
+
 
 def detect_device():
     device = "cpu"
@@ -406,7 +408,7 @@ def test_load_data():
     return x,y
 
 
-def train_test(trial_run = False):
+def train_test():
     # 1. 检测硬件
     device = detect_device()
     model = GPT2(GPT2Config()) # 直接用默认的gpt-2的配置来初始化一个模型
@@ -415,8 +417,7 @@ def train_test(trial_run = False):
     x = None
     y = None
     # 2. 准备数据，一般会用一个小数据集进行测试
-    if trial_run:
-        x,y = test_load_data()
+    x,y = test_load_data()
     
     # 3. 前向
     x = x.to(device)
@@ -429,6 +430,20 @@ def train_test(trial_run = False):
     print(loss)   # tensor(10.8736, device='cuda:0', grad_fn=<NllLossBackward0>)
     # -ln(1/50257) = 10.82  也就是随机初始化的网络，输出的概率是均匀分布的，所以损失大约是10.82
     # 1️⃣ 这里是要确定随机的初始网络的损失在一个合理范围， 详见:  10_复现 GPT-2.md## 3.4 网络初始损失校准
+
+    # 验证 wte和lm_head是否也是梯度共享的
+    loss.backward()  # 反向传播，计算梯度
+    weight_data_ptr = model.transformer.wte.weight.data_ptr()
+    weight_grad_ptr = model.transformer.wte.weight.grad.data_ptr()
+    print("权重数据 (data) 的内存地址:", weight_data_ptr)
+    print("权重梯度 (grad) 的内存地址:", weight_grad_ptr)
+    print(f"\n两者的地址相同吗? {weight_data_ptr == weight_grad_ptr}")
+    # print(model.transformer.wte.weight.grad)  # 这里打印的是embedding层的梯度，其他层的梯度也可以打印出来
+    # print(model.lm_head.weight.grad)  # 这里打印的是lm_head层的梯度，其他层的梯度也可以打印出来
+    print(type(model.transformer.wte.weight)) # <class 'torch.nn.parameter.Parameter'>
+    print( (model.transformer.wte.weight.grad== model.lm_head.weight.grad).all() ) # True  因为wte和lm_head是共享权重的，所以梯度也是共享的
+    # tensor(True, device='cuda:0')
+    return 
     
     # 5. 循环： 前向 + 反向传播 + 优化
     optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4)
@@ -586,8 +601,8 @@ if __name__ == "__main__":
 # 但是和原始的hf的pipeline结果不同，说明hf在采样生成的时候还有些别的操作
 
     # 3. 不从gpt2的预训练权重加载，从随机(构建网络的时候其实就默认初始化了)开始训练一个自己的gpt2权重，要比原始的强~
-    # train_test(True)
+    train_test()
     # test_load_data()
     # 4. 真正的训练，使用完整的莎士比亚文本的批次数据
-    train()
+    # train()
     
