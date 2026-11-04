@@ -214,9 +214,7 @@ class GPT2(nn.Module):
         # weight sharing
         self.transformer.wte.weight  = self.lm_head.weight
         # 直接把 lm_head的权重指向了wte的权重，这样就实现了weight sharing，但是wte的旧值就消失了(旧权重的指针就是野指针了，python会清理的)
-        print("x")
 
-    
     # @classmethod 将类中的普通方法转换为了“类方法”，它绑定的是“类本身”，而不是“类的实例”。
     # 下面方法的第一个参数 cls代表 class，不需要手动传入它，Python 解释器会自动将类本身作为第一个参数传入。
     # 它可以访问和修改类属性（类变量），但不能访问实例属性（因为它没有 self，不知道具体是哪个实例）
