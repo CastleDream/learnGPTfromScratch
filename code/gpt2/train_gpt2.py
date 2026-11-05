@@ -221,6 +221,27 @@ class GPT2(nn.Module):
         # 但是由于训练的单步时间主要由三部分组成：前向传播 + 反向传播 + 优化器更新。
         # 所以共享/不共享权重并不影响训练时间~ 主要影响的是训练时的存储占用
 
+        self.apply(self._init_weights) # 这里的apply是nn.Module的apply方法，会递归地将_init_weights应用到所有子模块上，包括transformer和lm_head
+        torch.nn.init.normal_(self.transformer.wte.weight, mean=0.0, std=0.02)
+
+    def _init_weights(self, module):
+        """ Initialize the weights 
+            https://github.com/openai/gpt-2/blob/master/src/model.py#L50
+            在原始的openai的TensorFlow实现中, 初始化使用的std等参数并不是常见的默认mean=0,std=1的高斯分布
+            为了尽可能和原始实现一致, 这里也需要改一下初始化
+            对于Layernorm层，默认pytorch就是w初始化为1，b初始化为0，所以不需要额外修改
+        """
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            # 对应conv1d的w是std 0.02， b直接全部初始化为0
+            # https://github.com/openai/gpt-2/blob/master/src/model.py#L50
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.01)
+            # 对应 https://github.com/openai/gpt-2/blob/master/src/model.py#L152
+            # 但是原始的openai实现里， wte是std=0.02, wpe是std=0.01
+
     # @classmethod 将类中的普通方法转换为了“类方法”，它绑定的是“类本身”，而不是“类的实例”。
     # 下面方法的第一个参数 cls代表 class，不需要手动传入它，Python 解释器会自动将类本身作为第一个参数传入。
     # 它可以访问和修改类属性（类变量），但不能访问实例属性（因为它没有 self，不知道具体是哪个实例）
@@ -431,12 +452,15 @@ def train_test():
     # 4. 损失  y.shape (4,32)
     y = y.to(device)
     loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))   # 相当于是 (128, 50257) 和 (128,) 计算交叉熵
-    print(loss)   # tensor(10.8736, device='cuda:0', grad_fn=<NllLossBackward0>)
+    print(loss)   
+    # 不修改初始化： tensor(10.8736, device='cuda:0', grad_fn=<NllLossBackward0>)
+    # 按照gpt2修改初始化后：tensor(10.9520, device='cuda:0', grad_fn=<NllLossBackward0>)
     # -ln(1/50257) = 10.82  也就是随机初始化的网络，输出的概率是均匀分布的，所以损失大约是10.82
     # 1️⃣ 这里是要确定随机的初始网络的损失在一个合理范围， 详见:  10_复现 GPT-2.md## 3.4 网络初始损失校准
+    return
 
     # 验证 wte和lm_head是否也是梯度共享的
-    loss.backward()  # 反向传播，计算梯度
+    # loss.backward()  # 反向传播，计算梯度
     # weight_data_ptr = model.transformer.wte.weight.data_ptr()
     # weight_grad_ptr = model.transformer.wte.weight.grad.data_ptr()
     # print("权重数据 (data) 的内存地址:", weight_data_ptr)
@@ -568,13 +592,13 @@ if __name__ == "__main__":
 # 但是和原始的hf的pipeline结果不同，说明hf在采样生成的时候还有些别的操作
 
     # 3. 不从gpt2的预训练权重加载，从随机(构建网络的时候其实就默认初始化了)开始训练一个自己的gpt2权重，要比原始的强~
-    # train_test()
+    train_test()
     # test_load_data()
     # 4. 真正的训练，使用完整的莎士比亚文本的批次数据
-    start = time.time()
-    train()
-    print("耗时： ", time.time() - start)
+    # start = time.time()
+    # train()
+    # print("耗时： ", time.time() - start)
     # 以50个batch为例，
     # 有权重共享的训练时间是: 8.954375267028809
-    # 没有权重共享的训练时间是: 
+    # 没有权重共享的训练时间是: 8.6 差不多，前向+
     
