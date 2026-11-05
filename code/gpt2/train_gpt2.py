@@ -221,6 +221,8 @@ class GPT2(nn.Module):
         # 但是由于训练的单步时间主要由三部分组成：前向传播 + 反向传播 + 优化器更新。
         # 所以共享/不共享权重并不影响训练时间~ 主要影响的是训练时的存储占用
 
+        # 这里这个初始化写不写都可以，gpt2的初始化其实很一般，还不如pytorch默认的呢，
+        # 详见：  md\10_复现 GPT-2.md## 3.10 gpt2初始化问题(Layernorm)
         self.apply(self._init_weights) # 这里的apply是nn.Module的apply方法，会递归地将_init_weights应用到所有子模块上，包括transformer和lm_head
         torch.nn.init.normal_(self.transformer.wte.weight, mean=0.0, std=0.02)
 
