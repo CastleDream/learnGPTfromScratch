@@ -5,6 +5,7 @@
   - [4. 前沿研究](#4-前沿研究)
     - [1. 机械可解释性（Mechanistic Interpretability, 简称 MI）](#1-机械可解释性mechanistic-interpretability-简称-mi)
     - [2. 知识编辑（Model Editing）](#2-知识编辑model-editing)
+  - [5. 面经/llm题库](#5-面经llm题库)
 
 # learnGPTfromScratch
 Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-hero)
@@ -134,3 +135,9 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 + BertViz：由 Jesse Vig 开发的注意力机制可视化工具，能极其直观地展示注意力头在句子词元（Token）之间的连线关系。
 + Distill.pub：虽然已停止更新，但 Chris Olah 团队早年在这里发表的关于 CNN 和 Transformer 视觉化解析的文章（如 Feature Visualization），至今仍是该领域的“圣经”，排版和交互极其精美。
 
+
+## 5. 面经/llm题库
++ <https://wanshuiyin.github.io/ARIS-in-AI-Offer/>
+  + <https://github.com/wanshuiyin/ARIS-in-AI-Offer>
++ <https://github.com/pallavi-shekhar/ai-engineering-interview-questions-company-wise>
+  + <https://hikari-tsai.github.io/ai-interview/zh-TW/questions/Q0296/?match=all&ready=1&company=Alibaba>
