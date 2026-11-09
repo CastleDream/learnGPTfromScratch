@@ -566,7 +566,9 @@ def train():
         y = y.to(device)
         logits = model(x)  
         loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
-
+        # import code; code.interact(local=locals())
+        from IPython import embed;embed(colors="neutral");break
+        # 让脚本在运行到这一行时“暂停”，并打开一个交互式的Python命令行环境（REPL），在这个环境里，您可以直接查看、计算甚至修改当前上下文中的所有局部变量。
         optimizer.zero_grad()
         loss.backward() 
         optimizer.step()
