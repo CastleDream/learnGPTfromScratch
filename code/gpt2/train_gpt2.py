@@ -86,6 +86,9 @@ class CasualSelfAttention(nn.Module):
 
         # MultiHead(Q, K, V ) = Concat(head1, ..., headh)WO
         self.c_proj = nn.Linear(config.n_embed, config.n_embed) 
+        self.c_proj.residual_scale_init = 1 # 准备对残差连接的初始化进行优化
+        # 在 Python 中，默认情况下类的实例是可以动态添加属性的。这是因为实例的属性通常存储在一个字典 __dict__ 中。
+        # 只有当类中显式定义了 __slots__ 时，才会限制动态添加属性（通常是为了节省内存）。
 
         self.n_embed = config.n_embed
         self.n_head = config.n_head
@@ -150,11 +153,10 @@ dff = 2048.
         self.c_fc = nn.Linear(config.n_embed, 4*config.n_embed)
         self.gelu = nn.GELU(approximate='tanh')
         self.c_proj = nn.Linear(4*config.n_embed, config.n_embed)
+        self.c_proj.residual_scale_init = 1   # 准备对残差连接的初始化进行优化
     
     def forward(self, x):
         return self.c_proj(self.gelu(self.c_fc(x)))
-
-
 
 class Block(nn.Module):
     def __init__(self, config:GPT2Config):
@@ -225,6 +227,7 @@ class GPT2(nn.Module):
         # 详见：  md\10_复现 GPT-2.md## 3.10 gpt2初始化问题(Layernorm)
         self.apply(self._init_weights) # 这里的apply是nn.Module的apply方法，会递归地将_init_weights应用到所有子模块上，包括transformer和lm_head
         torch.nn.init.normal_(self.transformer.wte.weight, mean=0.0, std=0.02)
+        
 
     def _init_weights(self, module):
         """ Initialize the weights 
@@ -232,9 +235,15 @@ class GPT2(nn.Module):
             在原始的openai的TensorFlow实现中, 初始化使用的std等参数并不是常见的默认mean=0,std=1的高斯分布
             为了尽可能和原始实现一致, 这里也需要改一下初始化
             对于Layernorm层，默认pytorch就是w初始化为1，b初始化为0，所以不需要额外修改
+
+            这里目前存在一个问题: wte和lm_head共享权重→ wte先以0.01初始化, lm_head先以0.02初始化,所以有同一个权重被初始化了两次 
+            但是这并没什么问题, 所以暂时不用改
         """
         if isinstance(module, nn.Linear):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            std = 0.02
+            if hasattr(module,'residual_scale_init'):
+                std *= (2*self.config.n_layer)**(-0.5)   # 这里乘2是因为每个block其实有两个残差连接，注意力和MLP
+            torch.nn.init.normal_(module.weight, mean=0.0, std=std)
             # 对应conv1d的w是std 0.02， b直接全部初始化为0
             # https://github.com/openai/gpt-2/blob/master/src/model.py#L50
             if module.bias is not None:
@@ -545,8 +554,11 @@ def train():
     model = GPT2(GPT2Config()) # 直接用默认的gpt-2的配置来初始化一个模型
     model.to(device)    
 
+    torch.manual_seed(1337)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(1337)
+
     train_loader = DataloaderLite(B=4, T=32)
-    
     optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4)
     for i in range(50):
         x,y = train_loader.next_batch()  # 这里没有在DataloaderLite的init里把所有文本都放到gpu里，而是后面调用的时候一批一批的放，主要是为了节约gpu
@@ -566,6 +578,7 @@ def train():
     """
 
 # python code/gpt2/train_gpt2.py
+
 if __name__ == "__main__":
     # 1. 测试模型结构是否正确，是否可以正确加载gpt-2权重
     # model = GPT2.from_pretrained("gpt2")
@@ -594,11 +607,12 @@ if __name__ == "__main__":
 # 但是和原始的hf的pipeline结果不同，说明hf在采样生成的时候还有些别的操作
 
     # 3. 不从gpt2的预训练权重加载，从随机(构建网络的时候其实就默认初始化了)开始训练一个自己的gpt2权重，要比原始的强~
-    train_test()
+    # train_test()
     # test_load_data()
     # 4. 真正的训练，使用完整的莎士比亚文本的批次数据
     # start = time.time()
-    # train()
+    train()
+    # 3GB/8GB
     # print("耗时： ", time.time() - start)
     # 以50个batch为例，
     # 有权重共享的训练时间是: 8.954375267028809
