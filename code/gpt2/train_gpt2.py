@@ -558,21 +558,31 @@ def train():
     if torch.cuda.is_available():
         torch.cuda.manual_seed(1337)
 
-    train_loader = DataloaderLite(B=4, T=32)
+    # train_loader = DataloaderLite(B=4, T=32) # 跑初始化测试用
+    train_loader = DataloaderLite(B=16, T=1024)  # 实际运行对应的参数
+
+    torch.set_float32_matmul_precision("high") # 开始TF32的matmul精度模式，只有A100(`Ampere`之后的架构才可以开启这个特性)
+
     optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4)
     for i in range(50):
+        t0 = time.time()
         x,y = train_loader.next_batch()  # 这里没有在DataloaderLite的init里把所有文本都放到gpu里，而是后面调用的时候一批一批的放，主要是为了节约gpu
         x = x.to(device)
         y = y.to(device)
         logits = model(x)  
         loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
         # import code; code.interact(local=locals())
-        from IPython import embed;embed(colors="neutral");break
+        # from IPython import embed;embed(colors="neutral");break;
         # 让脚本在运行到这一行时“暂停”，并打开一个交互式的Python命令行环境（REPL），在这个环境里，您可以直接查看、计算甚至修改当前上下文中的所有局部变量。
         optimizer.zero_grad()
         loss.backward() 
         optimizer.step()
-        print(f"step {i}, loss: {loss.item()}")
+        torch.cuda.synchronize()  # 等待所有GPU操作完成，确保计时准确
+        t1 = time.time()
+        dt = (t1 -t0)*1000  # miliseconds(毫秒)
+        tokens_per_sec = train_loader.B * train_loader.T / (t1 - t0) # 每秒处理的token数量 tokens per second throughout
+        print(f"step {i}, loss: {loss.item()}, time: {dt:.2f}ms")
+        # print(f"step {i}, loss: {loss.item()}")
     """
         这次由于不是对单个batch进行优化，所以不会出现在单个batch上过拟合的情况
         同时，由于有50257个token，但是这些token大部分都不在莎士比亚文本中，
@@ -580,7 +590,6 @@ def train():
     """
 
 # python code/gpt2/train_gpt2.py
-
 if __name__ == "__main__":
     # 1. 测试模型结构是否正确，是否可以正确加载gpt-2权重
     # model = GPT2.from_pretrained("gpt2")
