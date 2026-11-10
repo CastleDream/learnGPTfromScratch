@@ -561,7 +561,7 @@ def train():
     # train_loader = DataloaderLite(B=4, T=32) # 跑初始化测试用
     train_loader = DataloaderLite(B=16, T=1024)  # 实际运行对应的参数
 
-    torch.set_float32_matmul_precision("high") # 开始TF32的matmul精度模式，只有A100(`Ampere`之后的架构才可以开启这个特性)
+    # torch.set_float32_matmul_precision("high") # 开始TF32的matmul精度模式，只有A100/`Ampere`之后的架构才可以开启这个特性
 
     optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4)
     for i in range(50):
@@ -569,8 +569,9 @@ def train():
         x,y = train_loader.next_batch()  # 这里没有在DataloaderLite的init里把所有文本都放到gpu里，而是后面调用的时候一批一批的放，主要是为了节约gpu
         x = x.to(device)
         y = y.to(device)
-        logits = model(x)  
-        loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
+        with torch.autocast(device_type=device, dtype=torch.bfloat16):
+            logits = model(x)  
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
         # import code; code.interact(local=locals())
         # from IPython import embed;embed(colors="neutral");break;
         # 让脚本在运行到这一行时“暂停”，并打开一个交互式的Python命令行环境（REPL），在这个环境里，您可以直接查看、计算甚至修改当前上下文中的所有局部变量。
