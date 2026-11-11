@@ -552,7 +552,9 @@ class DataloaderLite:
 def train():
     device = detect_device()
     model = GPT2(GPT2Config()) # 直接用默认的gpt-2的配置来初始化一个模型
-    model.to(device)    
+    model.to(device)  
+    model = torch.compile(model)  # torch.compile是pytorch2.0的新特性，主要是为了加速模型的训练和推理，类似于tensorflow的XLA编译器
+    # import code; code.interact(local=locals())
 
     torch.manual_seed(1337)
     if torch.cuda.is_available():
