@@ -129,6 +129,8 @@ class CasualSelfAttention(nn.Module):
         att = att.masked_fill(self.bias[:,:,:T,:T]==0,float('-inf'))   ### ❗❗❗❗❗这里是 -inf 是负无穷 实际输入的T肯定不会超过config.block_size，所以这里self.bias初始化用block_size也没问题
         att = F.softmax(att, dim = -1)
         y = att@v  #(B,nh,T,T)@(B,nh,T,ns)=(B,nh,T,ns)
+
+        y = F.scaled_dot_product_attention(q, k, v, is_causal=True)  # (B,nh,T,ns)
         
         # re-assemble all head outputs side by side 重新组装所有head的输出
         y = y.transpose(1,2).contiguous().view(B,T,C)  # (B,nh,T,ns)→(B,T,nh,ns)→(B,T,C)
