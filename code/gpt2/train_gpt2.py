@@ -125,11 +125,12 @@ class CasualSelfAttention(nn.Module):
         # softmax(QK^T/(dk**0.5))V
         # q和k是矩阵乘法，(T,ns)@(ns,T)→(T,T)
         # att = (q@k.transpose(-2,-1))*(k.size(-1))**(-0.5)
-        att = (q@k.transpose(-2,-1))*(1/math.sqrt(k.size(-1))) #(B,nh,T,T)
-        att = att.masked_fill(self.bias[:,:,:T,:T]==0,float('-inf'))   ### ❗❗❗❗❗这里是 -inf 是负无穷 实际输入的T肯定不会超过config.block_size，所以这里self.bias初始化用block_size也没问题
-        att = F.softmax(att, dim = -1)
-        y = att@v  #(B,nh,T,T)@(B,nh,T,ns)=(B,nh,T,ns)
 
+        # att = (q@k.transpose(-2,-1))*(1/math.sqrt(k.size(-1))) #(B,nh,T,T)
+        # att = att.masked_fill(self.bias[:,:,:T,:T]==0,float('-inf'))   ### ❗❗❗❗❗这里是 -inf 是负无穷 实际输入的T肯定不会超过config.block_size，所以这里self.bias初始化用block_size也没问题
+        # att = F.softmax(att, dim = -1)
+        # y = att@v  #(B,nh,T,T)@(B,nh,T,ns)=(B,nh,T,ns)
+        # 用这句代替上面四句计算Attention
         y = F.scaled_dot_product_attention(q, k, v, is_causal=True)  # (B,nh,T,ns)
         
         # re-assemble all head outputs side by side 重新组装所有head的输出
@@ -553,7 +554,7 @@ class DataloaderLite:
 
 def train():
     device = detect_device()
-    model = GPT2(GPT2Config()) # 直接用默认的gpt-2的配置来初始化一个模型
+    model = GPT2(GPT2Config(vocab_size= 50304)) # 直接用默认的gpt-2的配置来初始化一个模型，修改其中的odd的超参，加快计算速度，改为偶数even
     model.to(device)  
     model = torch.compile(model)  # torch.compile是pytorch2.0的新特性，主要是为了加速模型的训练和推理，类似于tensorflow的XLA编译器
     # import code; code.interact(local=locals())
