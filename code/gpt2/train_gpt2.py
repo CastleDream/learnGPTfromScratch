@@ -552,12 +552,28 @@ class DataloaderLite:
         return x,y
 
 
+def get_lr(it, max_lr, min_lr, warmup_steps, max_steps):
+    if it<warmup_steps:
+        return max_lr/warmup_steps*(it+1)   
+    if it>max_steps:
+        return min_lr
+    decay_ratio = (it - warmup_steps)/(max_steps - warmup_steps) 
+    assert 0 <= decay_ratio <= 1  
+    coeff = 0.5*(1.0 + math.cos(math.pi*decay_ratio))
+    return min_lr + coeff*(max_lr - min_lr)
+
+# python code/gpt2/train_gpt2.py
 def train():
     device = detect_device()
     model = GPT2(GPT2Config(vocab_size= 50304)) # 直接用默认的gpt-2的配置来初始化一个模型，修改其中的odd的超参，加快计算速度，改为偶数even
     model.to(device)  
     model = torch.compile(model)  # torch.compile是pytorch2.0的新特性，主要是为了加速模型的训练和推理，类似于tensorflow的XLA编译器
     # import code; code.interact(local=locals())
+
+    max_lr = 3e-4
+    min_lr = max_lr*0.1
+    warmup_steps = 10
+    max_steps = 50
 
     torch.manual_seed(1337)
     if torch.cuda.is_available():
@@ -568,27 +584,34 @@ def train():
 
     # torch.set_float32_matmul_precision("high") # 开始TF32的matmul精度模式，只有A100/`Ampere`之后的架构才可以开启这个特性
     optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4, betas=(0.9, 0.95), eps=1e-8)
-    for i in range(50):
+    for step in range(max_steps):
         t0 = time.time()
         x,y = train_loader.next_batch()  # 这里没有在DataloaderLite的init里把所有文本都放到gpu里，而是后面调用的时候一批一批的放，主要是为了节约gpu
         x = x.to(device)
         y = y.to(device)
+        optimizer.zero_grad()
         with torch.autocast(device_type=device, dtype=torch.bfloat16):
             logits = model(x)  
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
         # import code; code.interact(local=locals())
         # from IPython import embed;embed(colors="neutral");break;
         # 让脚本在运行到这一行时“暂停”，并打开一个交互式的Python命令行环境（REPL），在这个环境里，您可以直接查看、计算甚至修改当前上下文中的所有局部变量。
-        optimizer.zero_grad()
         loss.backward() 
         # 根据gpt3论文 clip the global norm of the gradient at 1.0 梯度裁剪控制到1.0
         norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        lr = get_lr(step, max_lr, min_lr, warmup_steps, max_steps)
+        for param_group in optimizer.param_groups:
+            # import code; code.interact(local=locals()) # 暂停开启交互式，就可以看到这个对象支持的keys了
+            # param_group.keys()
+            # dict_keys(['params', 'lr', 'betas', 'eps', 'weight_decay', 'amsgrad', 'foreach', 'maximize', 'capturable', 'differentiable', 'fused'])
+            param_group['lr'] = lr
         optimizer.step()
         torch.cuda.synchronize()  # 等待所有GPU操作完成，确保计时准确
         t1 = time.time()
         dt = (t1 -t0)*1000  # miliseconds(毫秒)
-        tokens_per_sec = train_loader.B * train_loader.T / (t1 - t0) # 每秒处理的token数量 tokens per second throughout
-        print(f"step {i:4d} | loss: {loss.item():.6f} | norm: {norm:.4f} | dt: {dt:.2f}ms | tokens/sec: {tokens_per_sec:.2f}")
+        tokens_processed = train_loader.B * train_loader.T
+        tokens_per_sec = tokens_processed / (t1 - t0) # 每秒处理的token数量 tokens per second throughout
+        print(f"step {step:4d} | loss: {loss.item():.6f} |  lr: {lr:.4f} |norm: {norm:.4f} | dt: {dt:.2f}ms | tokens/sec: {tokens_per_sec:.2f}")
         # print(f"step {i}, loss: {loss.item()}")
     """
         这次由于不是对单个batch进行优化，所以不会出现在单个batch上过拟合的情况
