@@ -8,7 +8,7 @@
 - [3. 相同输出维度的单头和多头性能差异](#3-相同输出维度的单头和多头性能差异)
 - [4. skip-connection的“零初始化” (Zero-Initialization)](#4-skip-connection的零初始化-zero-initialization)
 - [5. transformer里的残差连接](#5-transformer里的残差连接)
-- [5. transformer里的layer norm](#5-transformer里的layer-norm)
+- [6. transformer里的layer norm](#6-transformer里的layer-norm)
 - [X. transformer类网络和具体实现](#x-transformer类网络和具体实现)
 
 # 1. 张量的梯度理解(pytorch中每个张量单个元素的grad意味着为什么)
@@ -334,7 +334,7 @@ if zero_init_residual:
   + [tensor2tensor/layers/transformer_layers.py](https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/layers/transformer_layers.py#L138)
   + [tensor2tensor/layers/transformer_memory.py](https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/layers/transformer_memory.py)
 
-# 5. transformer里的layer norm
+# 6. transformer里的layer norm
 参考链接：
 + <https://docs.pytorch.org/docs/2.13/generated/torch.nn.LayerNorm.html>
 + https://arxiv.org/pdf/1607.06450
@@ -359,3 +359,5 @@ if zero_init_residual:
    + 同时包含 Encoder 和 Decoder，并且两者通过 Cross-Attention 交互的完整原始架构，最贴近的参考是 BART 或 T5
       + https://github.com/huggingface/transformers/blob/main/src/transformers/models/bart/modeling_bart.py#L143
       + https://github.com/huggingface/transformers/blob/main/src/transformers/models/t5/modeling_t5.py#L176
+
+

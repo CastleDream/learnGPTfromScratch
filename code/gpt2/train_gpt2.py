@@ -567,10 +567,10 @@ def train():
     device = detect_device()
     model = GPT2(GPT2Config(vocab_size= 50304)) # 直接用默认的gpt-2的配置来初始化一个模型，修改其中的odd的超参，加快计算速度，改为偶数even
     model.to(device)  
-    model = torch.compile(model)  # torch.compile是pytorch2.0的新特性，主要是为了加速模型的训练和推理，类似于tensorflow的XLA编译器
+    # model = torch.compile(model)  # torch.compile是pytorch2.0的新特性，主要是为了加速模型的训练和推理，类似于tensorflow的XLA编译器
     # import code; code.interact(local=locals())
 
-    max_lr = 3e-4
+    max_lr = 6e-4       # 由于下面会用schedule来调整lr，因此优化器里设置的lr其实并不发挥作用
     min_lr = max_lr*0.1
     warmup_steps = 10
     max_steps = 50
@@ -600,11 +600,11 @@ def train():
         # 根据gpt3论文 clip the global norm of the gradient at 1.0 梯度裁剪控制到1.0
         norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         lr = get_lr(step, max_lr, min_lr, warmup_steps, max_steps)
-        for param_group in optimizer.param_groups:
-            # import code; code.interact(local=locals()) # 暂停开启交互式，就可以看到这个对象支持的keys了
-            # param_group.keys()
-            # dict_keys(['params', 'lr', 'betas', 'eps', 'weight_decay', 'amsgrad', 'foreach', 'maximize', 'capturable', 'differentiable', 'fused'])
-            param_group['lr'] = lr
+        optimizer.param_groups[0]['lr'] = lr  # 直接修改optimizer的学习率
+        # 只有1个param_groups 不用遍历，直接该就行了
+        # for param_group in optimizer.param_groups:
+        #     import code; code.interact(local=locals())
+        #     param_group['lr'] = lr
         optimizer.step()
         torch.cuda.synchronize()  # 等待所有GPU操作完成，确保计时准确
         t1 = time.time()
