@@ -186,7 +186,8 @@ class Block(nn.Module):
         x = x + self.attn(self.ln_1(x))  
         x = x + self.mlp(self.ln_2(x))
         return x
-        
+
+import inspect 
 class GPT2(nn.Module):
     """
         为了保证可以顺利加载gpt2的权重，GPT2模型的结构和参数需要和原始的GPT2模型保持一致。
@@ -340,6 +341,37 @@ class GPT2(nn.Module):
         logits = self.lm_head(x)  # logits.shape (B,T, vocab_size)  lm_head这个层，输入是n_embed，输出是vocab_size
         return logits
 
+    def configure_optimizers(self, weight_decay, learning_rate, device):
+        # start with all of the candidate parameters(that requires grad)
+        # param_dict的结构是: {param_name: param}
+        param_dict = {pn:p for pn, p in self.named_parameters()}
+        param_dict = {pn:p for pn, p in param_dict.items() if p.requires_grad}
+        # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
+        # i.e. all weight tensors in matmuls + embeddings decays, all biases and layernorms don't
+        # 这里的n也是name的意思
+        decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
+        nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
+        optim_group = [
+            {'params': decay_params, 'weight_decay': weight_decay},
+            {'params': nodecay_params, 'weight_decay': 0.0}
+        ]
+        num_decay_params = sum(p.numel() for p in decay_params)
+        num_nodecay_params = sum(p.numel() for p in nodecay_params)
+        print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
+        print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
+        # num decayed parameter tensors: 50, with 124,354,560 parameters
+        # num non-decayed parameter tensors: 98, with 121,344 parameters")
+
+        # create AdamW optimizer and use the fused version if it is available
+        # 这里是进行防御性检查，确保当前的pytorch版本实现的AdamW支持 fused参数
+        # https://docs.pytorch.org/docs/2.15/generated/torch.optim.AdamW.html
+        # 本质上也是一种CUDA内核融合的加速手段
+        fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
+        use_fused = fused_available and 'cuda' in device
+        print(f'using fused AdamW: {use_fused}')
+        optimizer = torch.optim.AdamW(optim_group, lr=learning_rate, device=device, betas=(0.9,0.95), eps=1e-8)
+        # 这里定义看不懂的话，可以去 10_复现 GPT-2.md ## x.8 optimizer.param_groups 看
+        return optimizer
 
 def detect_device():
     device = "cpu"
@@ -567,6 +599,7 @@ def train():
     device = detect_device()
     model = GPT2(GPT2Config(vocab_size= 50304)) # 直接用默认的gpt-2的配置来初始化一个模型，修改其中的odd的超参，加快计算速度，改为偶数even
     model.to(device)  
+    # import code; code.interact(local=locals())
     # model = torch.compile(model)  # torch.compile是pytorch2.0的新特性，主要是为了加速模型的训练和推理，类似于tensorflow的XLA编译器
     # import code; code.interact(local=locals())
 
@@ -580,16 +613,30 @@ def train():
         torch.cuda.manual_seed(1337)
 
     # train_loader = DataloaderLite(B=4, T=32) # 跑初始化测试用
+    # GPT3中最小的模型的batch_size是 0.5m, 即50w tokens, 0.5e6/1024 = 488.28 所以需要把B改成488左右
+    # 尝试使用梯度累积技术 Gradient Accumulation
+    total_batch_size = 524288   # 2**18=262144  2**19=524288 所以选择这个，而不是无法被2多次整除的 50 0000
+    B = 16
+    T = 1024
+    assert total_batch_size%(B*T)==0,"make sure total_batch_size is divisible by B*T"
+    grad_accum_steps = total_batch_size//(B*T)   
+    # 按照这种批次要累计的步数 2**19/(16*1024) = 2**19/(2**4 * 2**10) = 2**5 = 32  当前优化的结果是90ms一个，则32个需要大约3分钟左右
+    print(f"total desired batch size is {total_batch_size}")
+    print(f"=> caculated gradient accumulation steps: {grad_accum_steps}")
+
     train_loader = DataloaderLite(B=16, T=1024)  # 实际运行对应的参数
 
     # torch.set_float32_matmul_precision("high") # 开始TF32的matmul精度模式，只有A100/`Ampere`之后的架构才可以开启这个特性
-    optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4, betas=(0.9, 0.95), eps=1e-8)
+    # optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4, betas=(0.9, 0.95), eps=1e-8)
+    optimizer = model.configure_optimizers(weight_decay = 0.1, learning_rate = 6e-4, device = device)
     for step in range(max_steps):
         t0 = time.time()
+        optimizer.zero_grad()
+        
         x,y = train_loader.next_batch()  # 这里没有在DataloaderLite的init里把所有文本都放到gpu里，而是后面调用的时候一批一批的放，主要是为了节约gpu
         x = x.to(device)
         y = y.to(device)
-        optimizer.zero_grad()
+        
         with torch.autocast(device_type=device, dtype=torch.bfloat16):
             logits = model(x)  
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
