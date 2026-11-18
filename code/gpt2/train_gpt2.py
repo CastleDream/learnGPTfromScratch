@@ -632,18 +632,22 @@ def train():
     for step in range(max_steps):
         t0 = time.time()
         optimizer.zero_grad()
+        loss_accum = 0.0
+        # 改为Gradient Accumulation来用有限的显存模拟大批量batch训练
+        for micro_step in range(grad_accum_steps):
+            x,y = train_loader.next_batch()  # 这里没有在DataloaderLite的init里把所有文本都放到gpu里，而是后面调用的时候一批一批的放，主要是为了节约gpu
+            x = x.to(device)
+            y = y.to(device)
         
-        x,y = train_loader.next_batch()  # 这里没有在DataloaderLite的init里把所有文本都放到gpu里，而是后面调用的时候一批一批的放，主要是为了节约gpu
-        x = x.to(device)
-        y = y.to(device)
-        
-        with torch.autocast(device_type=device, dtype=torch.bfloat16):
-            logits = model(x)  
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
-        # import code; code.interact(local=locals())
-        # from IPython import embed;embed(colors="neutral");break;
-        # 让脚本在运行到这一行时“暂停”，并打开一个交互式的Python命令行环境（REPL），在这个环境里，您可以直接查看、计算甚至修改当前上下文中的所有局部变量。
-        loss.backward() 
+            with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                logits = model(x)  
+                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
+            loss = loss/grad_accum_steps
+            loss_accum+=loss.detach()
+            # import code; code.interact(local=locals())
+            # from IPython import embed;embed(colors="neutral");break;
+            # 让脚本在运行到这一行时“暂停”，并打开一个交互式的Python命令行环境（REPL），在这个环境里，您可以直接查看、计算甚至修改当前上下文中的所有局部变量。
+            loss.backward() 
         # 根据gpt3论文 clip the global norm of the gradient at 1.0 梯度裁剪控制到1.0
         norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         lr = get_lr(step, max_lr, min_lr, warmup_steps, max_steps)
@@ -658,7 +662,7 @@ def train():
         dt = (t1 -t0)*1000  # miliseconds(毫秒)
         tokens_processed = train_loader.B * train_loader.T
         tokens_per_sec = tokens_processed / (t1 - t0) # 每秒处理的token数量 tokens per second throughout
-        print(f"step {step:4d} | loss: {loss.item():.6f} |  lr: {lr:.4f} |norm: {norm:.4f} | dt: {dt:.2f}ms | tokens/sec: {tokens_per_sec:.2f}")
+        print(f"step {step:4d} | loss: {loss_accum.item():.6f} |  lr: {lr:.4f} |norm: {norm:.4f} | dt: {dt:.2f}ms | tokens/sec: {tokens_per_sec:.2f}")
         # print(f"step {i}, loss: {loss.item()}")
     """
         这次由于不是对单个batch进行优化，所以不会出现在单个batch上过拟合的情况
