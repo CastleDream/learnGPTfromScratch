@@ -369,7 +369,7 @@ class GPT2(nn.Module):
         fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
         use_fused = fused_available and 'cuda' in device
         print(f'using fused AdamW: {use_fused}')
-        optimizer = torch.optim.AdamW(optim_group, lr=learning_rate, device=device, betas=(0.9,0.95), eps=1e-8)
+        optimizer = torch.optim.AdamW(optim_group, lr=learning_rate, betas=(0.9,0.95), eps=1e-8)
         # 这里定义看不懂的话，可以去 10_复现 GPT-2.md ## x.8 optimizer.param_groups 看
         return optimizer
 
@@ -583,7 +583,6 @@ class DataloaderLite:
         y = buf[1:].view(B,T)
         return x,y
 
-
 def get_lr(it, max_lr, min_lr, warmup_steps, max_steps):
     if it<warmup_steps:
         return max_lr/warmup_steps*(it+1)   
@@ -595,8 +594,44 @@ def get_lr(it, max_lr, min_lr, warmup_steps, max_steps):
     return min_lr + coeff*(max_lr - min_lr)
 
 # python code/gpt2/train_gpt2.py
+# CUDA_VISIBLE_DEVICES=6 python train.py
+# DDP launch:
+# torchrun --standalone --nproc_per_node=8 code/gpt2/train_gpt2.py
 def train():
-    device = detect_device()
+    # DDP执行（分布式数据并行）
+    # 可以参考： https://docs.pytorch.org/tutorials/intermediate/ddp_tutorial.html#combining-ddp-with-model-parallelism
+    # run the training loop
+    from torch.distributed import init_process_group, destroy_process_group
+    # set up DDP(distributed data parallel)
+    # torchrun command sets the env variable RANK, LOCAL_RANK, and WORLD_SIZE
+    ddp = int(os.environ.get('RANK', -1))!=-1 # is this a ddp run? 
+    # 如果DDP在运行，则肯定会设置上面几个环境变量，所以以此作为检测DDP是否运行的标准，虽然有点粗糙，但是可以达到目的
+    if ddp:
+        # use of DDP atm demands CUDA, we set the device appropriately accordingly to rank
+        assert torch.cuda.is_available(), "for now i think we need CUDA for DDP"
+        init_process_group(backend='nccl')
+        ddp_rank = int(os.environ['RANK']) 
+        # 每个进程都会有一个RANK标记，根据RANK区分不同的进程(例如:运行在gpu0上的rank=0，gpu1上的rank=1)，除此之外，进程运行的是同样的脚本
+        ddp_local_rank = int(os.environ['LOCAL_RANK'])
+        # LOCAL_RANK仅在multi-node环境中使用，指的是单个节点上的GPU编号；如果是单机8卡，即单个节点8个GPU
+        ddp_world_size = int(os.environ['WORLD_SIZE']) # world_size = n_gpus 表示正在运行的进程总数 一般等于GPU数量
+        device = f"cuda:{ddp_local_rank}"
+        torch.cuda.set_device(device)
+        master_process = ddp_rank == 0 # this process will  do logging, chekpointing etc.
+        # 主进程一般是 rank=0的进程
+        # ddp_rank = 0
+        # master_process = ddp_rank==0
+        # master_process # True
+
+    else:
+        # vanilla, no-DDP run
+        ddp_rank = 0
+        ddp_local_rank = 0
+        ddp_world_size = 1
+        master_process = True
+        device = detect_device()
+        # 这里是非DDP的情况，所以只会有单个进程，不需要考虑多进程会导致打印print多次
+
     model = GPT2(GPT2Config(vocab_size= 50304)) # 直接用默认的gpt-2的配置来初始化一个模型，修改其中的odd的超参，加快计算速度，改为偶数even
     model.to(device)  
     # import code; code.interact(local=locals())
@@ -616,13 +651,20 @@ def train():
     # GPT3中最小的模型的batch_size是 0.5m, 即50w tokens, 0.5e6/1024 = 488.28 所以需要把B改成488左右
     # 尝试使用梯度累积技术 Gradient Accumulation
     total_batch_size = 524288   # 2**18=262144  2**19=524288 所以选择这个，而不是无法被2多次整除的 50 0000
-    B = 16
+    B = 16     # 如果开启了DDP，则每个进程的数据也都是 B,T这样的train_loader,但是梯度累积上有变化，需要把进程数考虑进去
     T = 1024
-    assert total_batch_size%(B*T)==0,"make sure total_batch_size is divisible by B*T"
-    grad_accum_steps = total_batch_size//(B*T)   
+    assert total_batch_size % (B * T * ddp_world_size)==0,"make sure total_batch_size is divisible by B * T * ddp_world_size"
+    grad_accum_steps = total_batch_size//(B * T * ddp_world_size)   
     # 按照这种批次要累计的步数 2**19/(16*1024) = 2**19/(2**4 * 2**10) = 2**5 = 32  当前优化的结果是90ms一个，则32个需要大约3分钟左右
-    print(f"total desired batch size is {total_batch_size}")
-    print(f"=> caculated gradient accumulation steps: {grad_accum_steps}")
+    # 如果用8卡的配置 配上DDP 则梯度累积就从32变成了4
+    # 这里为了防止DDP打印8次，需要限制只有主进程才可以打印
+    if master_process:
+        print(f"total desired batch size is {total_batch_size}")
+        print(f"=> caculated gradient accumulation steps: {grad_accum_steps}")
+    
+    # 测试一下进程启动 打印情况（注意: gpu序号不一定是按照顺序的，0号也不一定是第一个打印出来的）
+    # print("there is gpu: ", ddp_rank, 'Bye')
+    # import sys;sys.exit()
 
     train_loader = DataloaderLite(B=16, T=1024)  # 实际运行对应的参数
 
@@ -642,7 +684,7 @@ def train():
             with torch.autocast(device_type=device, dtype=torch.bfloat16):
                 logits = model(x)  
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
-            loss = loss/grad_accum_steps
+            loss = loss/grad_accum_steps   # 这步也会算在loss的梯度里面
             loss_accum+=loss.detach()
             # import code; code.interact(local=locals())
             # from IPython import embed;embed(colors="neutral");break;
@@ -660,7 +702,7 @@ def train():
         torch.cuda.synchronize()  # 等待所有GPU操作完成，确保计时准确
         t1 = time.time()
         dt = (t1 -t0)*1000  # miliseconds(毫秒)
-        tokens_processed = train_loader.B * train_loader.T
+        tokens_processed = train_loader.B * train_loader.T * grad_accum_steps
         tokens_per_sec = tokens_processed / (t1 - t0) # 每秒处理的token数量 tokens per second throughout
         print(f"step {step:4d} | loss: {loss_accum.item():.6f} |  lr: {lr:.4f} |norm: {norm:.4f} | dt: {dt:.2f}ms | tokens/sec: {tokens_per_sec:.2f}")
         # print(f"step {i}, loss: {loss.item()}")
@@ -709,4 +751,34 @@ if __name__ == "__main__":
     # 以50个batch为例，
     # 有权重共享的训练时间是: 8.954375267028809
     # 没有权重共享的训练时间是: 8.6 差不多，前向+
-    
+
+
+# 服务器上的运行记录  140GB H20-3e
+# CUDA_VISIBLE_DEVICES=6 python train.py
+# using device: cuda
+# total desired batch size is 524288
+# => caculated gradient accumulation steps: 32
+# loaded 338025 tokens from input.txt
+# 1 epoch = 20  batches
+# num decayed parameter tensors: 50, with 124,354,560 parameters
+# num non-decayed parameter tensors: 98, with 121,344 parameters
+# using fused AdamW: True
+# step    0 | loss: 10.929460 |  lr: 0.0001 |norm: 26.8521 | dt: 4928.92ms | tokens/sec: 106369.70
+# step    1 | loss: 9.591244 |  lr: 0.0001 |norm: 8.2556 | dt: 4400.76ms | tokens/sec: 119135.90
+# step    2 | loss: 9.152845 |  lr: 0.0002 |norm: 3.9851 | dt: 4401.89ms | tokens/sec: 119105.10
+# step    3 | loss: 9.690960 |  lr: 0.0002 |norm: 9.4761 | dt: 4402.14ms | tokens/sec: 119098.52
+# step    4 | loss: 8.954072 |  lr: 0.0003 |norm: 4.2440 | dt: 4401.45ms | tokens/sec: 119117.06
+# step    5 | loss: 8.561056 |  lr: 0.0004 |norm: 2.2662 | dt: 4401.74ms | tokens/sec: 119109.14
+# step    6 | loss: 8.264785 |  lr: 0.0004 |norm: 2.7377 | dt: 4402.01ms | tokens/sec: 119101.91
+# step    7 | loss: 7.912852 |  lr: 0.0005 |norm: 2.3136 | dt: 4401.34ms | tokens/sec: 119119.98
+# step    8 | loss: 7.526552 |  lr: 0.0005 |norm: 1.8833 | dt: 4402.11ms | tokens/sec: 119099.35
+# step    9 | loss: 7.471400 |  lr: 0.0006 |norm: 8.1894 | dt: 4400.94ms | tokens/sec: 119130.83
+# ...
+# step   47 | loss: 5.696489 |  lr: 0.0001 |norm: 0.2292 | dt: 4367.86ms | tokens/sec: 120033.23
+# step   48 | loss: 5.667216 |  lr: 0.0001 |norm: 0.1987 | dt: 4370.21ms | tokens/sec: 119968.61
+# step   49 | loss: 5.665666 |  lr: 0.0001 |norm: 0.2148 | dt: 4367.85ms | tokens/sec: 120033.44
+# A100 BFLOAT16 Tensor Core: 312 TFLOPS 
+# https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf
+# H20-3e BF16  148TFLOPS	 (百度百科 H20 H20，是英伟达为遵守美国出口限制而推出，专为中国市场设计的AI加速器 是个阉割版的GPU)
+# https://flopper.io/gpu/nvidia-h20-141gb
+# 所以A100的BF16计算速度差不读是H20-3e的2倍，所以老师的结果比这个差不多也是2倍
