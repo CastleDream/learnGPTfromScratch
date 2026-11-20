@@ -556,9 +556,14 @@ step 49, loss: 0.002778944093734026
 import tiktoken
 class DataloaderLite:
     # 根据官方的 PEP 8 代码风格指南，如果没有需要继承的基类，推荐直接省略括号，这样代码看起来更干净。
-    def __init__(self, B, T):
+    # 修改数据加载器使其可以对不同的DDP中的进程使用不同的数据，
+    # 这是目前老师可以找到的最简单的实现了，相当于一个轻量级的分布式数据加载器 simple distributed data loader light
+    # 当process_rank = 0，num_processes=1时，其实和之前非DDP的是完全一致的效果
+    def __init__(self, B, T, process_rank, num_processes):
         self.B = B    # batch size
         self.T = T    # sequence length
+        self.process_rank = process_rank   # 区分不同进程用的rank秩(int)
+        self.num_processes = num_processes # 总的进程数
 
         # load tokens from disk and store them in memory 把数据从硬盘加载到内存里
         with open("code/zero_gpt/input.txt", 'r') as f:
@@ -570,17 +575,20 @@ class DataloaderLite:
         print(f"1 epoch = {len(self.tokens) // (self.B * self.T)}  batches")
 
         # state
-        self.current_position = 0
+        # 为了让不同进程之间位置错开，所以这里的初始位置状态就不是0了，而是
+        # 假设B=16，T=1024，则对于rank0,就是从0开始，对于rank1，就是从16*1024开始，...
+        self.current_position = self.B * self.T * self.process_rank
     
     def next_batch(self):
-        B, T = self.B, self.T
+        B, T, num_processes = self.B, self.T, self.num_processes
         buf = self.tokens[self.current_position:self.current_position + B*T + 1]
-        self.current_position += B*T
-        # if loading next batch data would out of the bounds, reset for next epoch
-        if self.current_position + B*T + 1 >= self.tokens.size(0):
-            self.current_position = 0
         x = buf[:-1].view(B,T)
         y = buf[1:].view(B,T)
+        self.current_position += B * T * num_processes  # 推进的时候，要跳过所有的进程数的数据
+        # if loading next batch data would out of the bounds, reset for next epoch
+        if self.current_position + B*T*num_processes + 1 >= self.tokens.size(0):
+            self.current_position = self.B * self.T * self.process_rank
+
         return x,y
 
 def get_lr(it, max_lr, min_lr, warmup_steps, max_steps):
@@ -632,17 +640,6 @@ def train():
         device = detect_device()
         # 这里是非DDP的情况，所以只会有单个进程，不需要考虑多进程会导致打印print多次
 
-    model = GPT2(GPT2Config(vocab_size= 50304)) # 直接用默认的gpt-2的配置来初始化一个模型，修改其中的odd的超参，加快计算速度，改为偶数even
-    model.to(device)  
-    # import code; code.interact(local=locals())
-    # model = torch.compile(model)  # torch.compile是pytorch2.0的新特性，主要是为了加速模型的训练和推理，类似于tensorflow的XLA编译器
-    # import code; code.interact(local=locals())
-
-    max_lr = 6e-4       # 由于下面会用schedule来调整lr，因此优化器里设置的lr其实并不发挥作用
-    min_lr = max_lr*0.1
-    warmup_steps = 10
-    max_steps = 50
-
     torch.manual_seed(1337)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(1337)
@@ -666,11 +663,36 @@ def train():
     # print("there is gpu: ", ddp_rank, 'Bye')
     # import sys;sys.exit()
 
-    train_loader = DataloaderLite(B=16, T=1024)  # 实际运行对应的参数
+    # 调整数据加载器使其可以识别对应的ddp_rank和进程总数 ddp_world_size
+    train_loader = DataloaderLite(B=B, T=T, process_rank = ddp_rank, num_processes = ddp_world_size)  # 实际运行对应的参数
 
-    # torch.set_float32_matmul_precision("high") # 开始TF32的matmul精度模式，只有A100/`Ampere`之后的架构才可以开启这个特性
+    torch.set_float32_matmul_precision("high") # 开始TF32的matmul精度模式，只有A100/`Ampere`之后的架构才可以开启这个特性
+
+    # 由于上面设置了随机数，所以8个进程创建的模型是完全一模一样的
+    model = GPT2(GPT2Config(vocab_size= 50304)) # 直接用默认的gpt-2的配置来初始化一个模型，修改其中的odd的超参，加快计算速度，改为偶数even
+    model.to(device)  
+    # model = torch.compile(model)  # torch.compile是pytorch2.0的新特性，主要是为了加速模型的训练和推理，类似于tensorflow的XLA编译器
+    # import code; code.interact(local=locals())
+    # 需要将模型封装到ddp中,但是前向传播过程中，模型不需要有任何改动，DDP的实现也是和常规的前向是一致的，但是反向则不同
+    # 每个独立的gpu都会有自己这部分数据产生的所有参数的梯度，
+    # 在反向传播结束后，调用allReduce操作进行全局归约，这一操作的本质是对所有节点的梯度进行平均处理，然后把计算得到的平均值同步到所有节点去
+    from torch.nn.parallel import DistributedDataParallel as DDP
+    if ddp:
+        model = DDP(model, device_ids = [ddp_local_rank]) # 这里的device_ids放的一定是local_rank
+
+    max_lr = 6e-4       # 由于下面会用schedule来调整lr，因此优化器里设置的lr其实并不发挥作用
+    min_lr = max_lr*0.1
+    warmup_steps = 10
+    max_steps = 50
     # optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4, betas=(0.9, 0.95), eps=1e-8)
     optimizer = model.configure_optimizers(weight_decay = 0.1, learning_rate = 6e-4, device = device)
+
+    # 对于DDP的反向传播，由于这里启动了梯度累积，希望能逐步累加，而不是每次计算后都进行同步操作
+    # 即：希望 micro_step 到达 grad_accum_steps-1 的时候，再去平均所有的梯度
+    # 即: 所有进程自己的梯度累积操作执行完了之后，再进行进程之间的梯度allReduce操作
+    # https://docs.pytorch.org/docs/2.15/generated/torch.nn.parallel.DistributedDataParallel.html#torch.nn.parallel.DistributedDataParallel.no_sync
+    # 需要使用 no_sync() 这个方法， 文档示例写的很一般，去源码中可以看到：其实就是换了一个梯度对象
+    # https://github.com/pytorch/pytorch/blob/v2.15.0/torch/nn/parallel/distributed.py#L1680
     for step in range(max_steps):
         t0 = time.time()
         optimizer.zero_grad()
@@ -686,15 +708,18 @@ def train():
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
             loss = loss/grad_accum_steps   # 这步也会算在loss的梯度里面
             loss_accum+=loss.detach()
-            # import code; code.interact(local=locals())
-            # from IPython import embed;embed(colors="neutral");break;
-            # 让脚本在运行到这一行时“暂停”，并打开一个交互式的Python命令行环境（REPL），在这个环境里，您可以直接查看、计算甚至修改当前上下文中的所有局部变量。
+            if ddp:
+                model.require_backward_grad_sync = (micro_step == grad_accum_steps-1)
+                # 即：只在梯度累积的最后一步把require_backward_grad_sync变为True(执行梯度同步)，其余都是False(不执行梯度同步) 
             loss.backward() 
+        import torch.distributed as dist
+        if ddp:
+            loss_accum = dist.all_reduce(loss_accum, op = dist.ReduceOp.AVG)
         # 根据gpt3论文 clip the global norm of the gradient at 1.0 梯度裁剪控制到1.0
         norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         lr = get_lr(step, max_lr, min_lr, warmup_steps, max_steps)
         optimizer.param_groups[0]['lr'] = lr  # 直接修改optimizer的学习率
-        # 只有1个param_groups 不用遍历，直接该就行了
+        # 只有1个param_groups 不用遍历，直接改就行了
         # for param_group in optimizer.param_groups:
         #     import code; code.interact(local=locals())
         #     param_group['lr'] = lr
@@ -702,10 +727,14 @@ def train():
         torch.cuda.synchronize()  # 等待所有GPU操作完成，确保计时准确
         t1 = time.time()
         dt = (t1 -t0)*1000  # miliseconds(毫秒)
-        tokens_processed = train_loader.B * train_loader.T * grad_accum_steps
+        tokens_processed = train_loader.B * train_loader.T * grad_accum_steps * ddp_world_size
         tokens_per_sec = tokens_processed / (t1 - t0) # 每秒处理的token数量 tokens per second throughout
-        print(f"step {step:4d} | loss: {loss_accum.item():.6f} |  lr: {lr:.4f} |norm: {norm:.4f} | dt: {dt:.2f}ms | tokens/sec: {tokens_per_sec:.2f}")
-        # print(f"step {i}, loss: {loss.item()}")
+        if master_process:
+            print(f"step {step:4d} | loss: {loss_accum.item():.6f} |  lr: {lr:.4f} |norm: {norm:.4f} | dt: {dt:.2f}ms | tokens/sec: {tokens_per_sec:.2f}")
+    
+    # 训练结束之后，要释放掉资源，不然会warning
+    if ddp:
+        destroy_process_group()
     """
         这次由于不是对单个batch进行优化，所以不会出现在单个batch上过拟合的情况
         同时，由于有50257个token，但是这些token大部分都不在莎士比亚文本中，
