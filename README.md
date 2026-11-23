@@ -5,7 +5,8 @@
   - [4. 前沿研究](#4-前沿研究)
     - [1. 机械可解释性（Mechanistic Interpretability, 简称 MI）](#1-机械可解释性mechanistic-interpretability-简称-mi)
     - [2. 知识编辑（Model Editing）](#2-知识编辑model-editing)
-  - [5. 面经/llm题库](#5-面经llm题库)
+  - [5. 面经/llm题库/优秀教程](#5-面经llm题库优秀教程)
+  - [GPU问题](#gpu问题)
 
 # learnGPTfromScratch
 Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-hero)
@@ -59,7 +60,7 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 
 
 
-|任务|时间|前置/补充知识|
+|任务<br/>对应代码库|时间|前置/补充知识|
 |---|---|---|
 |P1: 神经网络与反向传播详解：构建 micrograd| 2026.6.14~6.18| - 前向计算<br/>- 反向传播<br/>- python的操作符重载<br/>- pytorch<br/>---------------<br/>- Min-Max/hinge loss, L2正则, 权重衰减(weight decay)|
 |P2: 语言建模详解：构建 makemore(part 1)|2026.6.23~6.25|- Bag-of-words(词袋模型)<br/>- n-gram<br/>- softmax<br/>- 最大似然函数<br/>- 广播机制(broadcast)|
@@ -136,8 +137,20 @@ Ref: [Github: karpathy/nn-zero-to-hero](https://github.com/karpathy/nn-zero-to-h
 + Distill.pub：虽然已停止更新，但 Chris Olah 团队早年在这里发表的关于 CNN 和 Transformer 视觉化解析的文章（如 Feature Visualization），至今仍是该领域的“圣经”，排版和交互极其精美。
 
 
-## 5. 面经/llm题库
+## 5. 面经/llm题库/优秀教程
 + <https://wanshuiyin.github.io/ARIS-in-AI-Offer/>
   + <https://github.com/wanshuiyin/ARIS-in-AI-Offer>
 + <https://github.com/pallavi-shekhar/ai-engineering-interview-questions-company-wise>
   + <https://hikari-tsai.github.io/ai-interview/zh-TW/questions/Q0296/?match=all&ready=1&company=Alibaba>
+
+**优秀教程**
++ [Andrej Karpathy：从魔方少年到AI布道者的传奇人生](https://zhuanlan.zhihu.com/p/2031018084727795886)
++ <https://github.com/karpathy/LLM101n>
+  + <https://eurekalabs.ai/>
+
+
+## GPU问题
+
+B站课程下面有个评论挺好：
+>[!NOTE]
+> 去github上搜nanoChat，适配一下**kaggle上的双T4免费gpu**，然后就可以尝试从零开始跑一个大模型出来了。跑完再来慢慢去调预训练，sft，强化学习等等，这个时候可能再来慢慢看课程理解更深刻。我觉得这样更好，我们跑模型都知道要更好的设置奖励训练才会好，那对人也是一样的。

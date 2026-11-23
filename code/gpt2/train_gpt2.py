@@ -3,6 +3,9 @@
 https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/modeling_gpt2.py
 https://github.com/karpathy/nanoGPT/blob/master/model.py
 
+其实这部分视频课程对应的代码在: https://github.com/karpathy/build-nanogpt youtubu原始视频链接下面有写，但是字太多了，没注意到
+还是在  2024年6月11日这个新闻里看到的[Karpathy最新四小时视频教程：从零复现GPT-2，通宵运行即搞定](https://www.thepaper.cn/newsDetail_forward_27688222)
+
 不直接用transformers库的GPT2LMHeadModel，而是自己实现一个简单的GPT2模型，方便后续修改和调试。
 1. 确保可以加载OpenAI开源的gpt2模型权重
 2. 用自己训练的数据去训练新的模型权重，确保可以超过原始的gpt2模型
