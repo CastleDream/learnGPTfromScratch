@@ -586,9 +586,17 @@ class DataloaderLite:
         y = buf[1:].view(B,T)
         self.current_position += B * T * num_processes  # 推进的时候，要跳过所有的进程数的数据
         # if loading next batch data would out of the bounds, reset for next epoch
-        if self.current_position + B*T*num_processes + 1 >= self.tokens.size(0):
+        # if self.current_position + B*T + 1 >= self.tokens.size(0):   # 以前单个GPU的数据重置标准
+        if self.current_position + B*T*num_processes + 1 >= self.tokens.size(0):  # 现在8个gpu的数据重置标准
             self.current_position = self.B * self.T * self.process_rank
-
+        # 单gpu和8gpu ddp的数据重置标准不同，导致每个梯度累积(32step vs 4step)的loss不同，要验证这种差异是否在可接受的范围内
+        # 有个简单的方案：大幅减小总批次的大小，即：make the total batch_size smaller，
+       
+        # grad_accum_steps = total_batch_size//(B * T * ddp_world_size)   
+        # 之前是 16(batch_size)*1024(sequence length)*8(gpu nums) =  2**4 * 2**10 * 2**3 = 2**17
+        # 之前设置的total = 524288 = 2**19  则 2**19/2**17 = 4 所以之前ddp的8个gpu中每个gpu的梯度累积是4step
+        # 将B从16改为4，则 4*1024*8=32768=2**15 则 2**19/2**15 = 2**4 = 16，即每个gpu要执行16次梯度累积
+        # 通过减小数据边界的影响来改善loss的差异，就会发现loss很接近了 详见 10_复现 GPT-2.md ### DDP的极简DataLoader带来的数据边界不对齐问题
         return x,y
 
 def get_lr(it, max_lr, min_lr, warmup_steps, max_steps):
@@ -654,6 +662,8 @@ def train():
     grad_accum_steps = total_batch_size//(B * T * ddp_world_size)   
     # 按照这种批次要累计的步数 2**19/(16*1024) = 2**19/(2**4 * 2**10) = 2**5 = 32  当前优化的结果是90ms一个，则32个需要大约3分钟左右
     # 如果用8卡的配置 配上DDP 则梯度累积就从32变成了4
+
+
     # 这里为了防止DDP打印8次，需要限制只有主进程才可以打印
     if master_process:
         print(f"total desired batch size is {total_batch_size}")
@@ -679,13 +689,14 @@ def train():
     from torch.nn.parallel import DistributedDataParallel as DDP
     if ddp:
         model = DDP(model, device_ids = [ddp_local_rank]) # 这里的device_ids放的一定是local_rank
+    raw_model = model.module if ddp else model
 
     max_lr = 6e-4       # 由于下面会用schedule来调整lr，因此优化器里设置的lr其实并不发挥作用
     min_lr = max_lr*0.1
     warmup_steps = 10
     max_steps = 50
     # optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4, betas=(0.9, 0.95), eps=1e-8)
-    optimizer = model.configure_optimizers(weight_decay = 0.1, learning_rate = 6e-4, device = device)
+    optimizer = raw_model.configure_optimizers(weight_decay = 0.1, learning_rate = 6e-4, device = device)
 
     # 对于DDP的反向传播，由于这里启动了梯度累积，希望能逐步累加，而不是每次计算后都进行同步操作
     # 即：希望 micro_step 到达 grad_accum_steps-1 的时候，再去平均所有的梯度
