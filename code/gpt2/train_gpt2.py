@@ -48,7 +48,7 @@ import math
 import time
 
 
-
+master_process = True
 # @dataclass 自动生成类中那些重复的“样板代码”（Boilerplate code），让你用最简洁的方式定义数据结构
 # 会在类创建时，自动根据你定义的类属性（带有类型注解的变量），自动生成 __init__、__repr__ 和 __eq__ 方法。 代码量减少了 80% 以上，而且不易出错。
 @dataclass
@@ -555,6 +555,12 @@ step 48, loss: 0.0028461928013712168
 step 49, loss: 0.002778944093734026
 """
         
+import numpy as np
+def load_tokens(filename):
+    npt = np.load(filename)
+    npt = npt.astype(np.int32) # added after video
+    ptt = torch.tensor(npt, dtype=torch.long)
+    return ptt
 
 import tiktoken
 class DataloaderLite:
@@ -562,24 +568,42 @@ class DataloaderLite:
     # 修改数据加载器使其可以对不同的DDP中的进程使用不同的数据，
     # 这是目前老师可以找到的最简单的实现了，相当于一个轻量级的分布式数据加载器 simple distributed data loader light
     # 当process_rank = 0，num_processes=1时，其实和之前非DDP的是完全一致的效果
-    def __init__(self, B, T, process_rank, num_processes):
+    def __init__(self, B, T, process_rank, num_processes, split):
         self.B = B    # batch size
         self.T = T    # sequence length
         self.process_rank = process_rank   # 区分不同进程用的rank秩(int)
         self.num_processes = num_processes # 总的进程数
+        assert split in {'train', 'val'}
 
+        # 以前的莎士比亚数据集
         # load tokens from disk and store them in memory 把数据从硬盘加载到内存里
-        with open("code/zero_gpt/input.txt", 'r') as f:
-            text = f.read()
-        enc = tiktoken.get_encoding('gpt2')
-        tokens = enc.encode(text)
-        self.tokens = torch.tensor(tokens, dtype=torch.long)
-        print(f"loaded {self.tokens.size(0)} tokens from input.txt")
-        print(f"1 epoch = {len(self.tokens) // (self.B * self.T)}  batches")
+        # with open("code/zero_gpt/input.txt", 'r') as f:
+        #     text = f.read()
+        # enc = tiktoken.get_encoding('gpt2')
+        # tokens = enc.encode(text)
+        # self.tokens = torch.tensor(tokens, dtype=torch.long)
+        # print(f"loaded {self.tokens.size(0)} tokens from input.txt")
+        # print(f"1 epoch = {len(self.tokens) // (self.B * self.T)}  batches")
+
+        # 新的FineWeb-Edu数据集的数据加载部分
+        data_root = "edu_fineweb10B"
+        shards = os.listdir(data_root)
+        shards = [s for s in shards if split in s]
+        shards = sorted(shards)
+        shards = [os.path.join(data_root, s) for s in shards]
+        self.shards = shards
+        assert len(shards)>0, f"no shards found for split {split}"
+        if master_process:
+            print(f"found {len(shards)} shards for split {split}")
 
         # state
         # 为了让不同进程之间位置错开，所以这里的初始位置状态就不是0了，而是
         # 假设B=16，T=1024，则对于rank0,就是从0开始，对于rank1，就是从16*1024开始，...
+        # self.current_position = self.B * self.T * self.process_rank
+
+        # state
+        self.current_shard = 0
+        self.tokens = load_tokens(self.shards[self.current_shard])
         self.current_position = self.B * self.T * self.process_rank
     
     def next_batch(self):
@@ -590,7 +614,10 @@ class DataloaderLite:
         self.current_position += B * T * num_processes  # 推进的时候，要跳过所有的进程数的数据
         # if loading next batch data would out of the bounds, reset for next epoch
         # if self.current_position + B*T + 1 >= self.tokens.size(0):   # 以前单个GPU的数据重置标准
-        if self.current_position + B*T*num_processes + 1 >= self.tokens.size(0):  # 现在8个gpu的数据重置标准
+        # if self.current_position + B*T*num_processes + 1 >= self.tokens.size(0):  # 现在8个gpu的数据重置标准
+        if self.current_position + B*T*num_processes + 1 >= len(self.tokens): # 改为fineweb_edu数据集的 当单个shards中的词元消耗完后
+            self.current_shard = (self.current_shard + 1)%len(self.shards) # 切换到下一个切片，必要时循环回起始切片( (99+1)%100 = 0)
+            self.tokens = load_tokens(self.shards[self.current_shard])
             self.current_position = self.B * self.T * self.process_rank
         # 单gpu和8gpu ddp的数据重置标准不同，导致每个梯度累积(32step vs 4step)的loss不同，要验证这种差异是否在可接受的范围内
         # 有个简单的方案：大幅减小总批次的大小，即：make the total batch_size smaller，
@@ -677,7 +704,7 @@ def train():
     # import sys;sys.exit()
 
     # 调整数据加载器使其可以识别对应的ddp_rank和进程总数 ddp_world_size
-    train_loader = DataloaderLite(B=B, T=T, process_rank = ddp_rank, num_processes = ddp_world_size)  # 实际运行对应的参数
+    train_loader = DataloaderLite(B=B, T=T, process_rank = ddp_rank, num_processes = ddp_world_size, split='train')  # 实际运行对应的参数
 
     torch.set_float32_matmul_precision("high") # 开始TF32的matmul精度模式，只有A100/`Ampere`之后的架构才可以开启这个特性
 
@@ -696,8 +723,8 @@ def train():
 
     max_lr = 6e-4       # 由于下面会用schedule来调整lr，因此优化器里设置的lr其实并不发挥作用
     min_lr = max_lr*0.1
-    warmup_steps = 10
-    max_steps = 50
+    warmup_steps = 715 
+    max_steps = 19073   # 每个训练步处理 2**19 = 524288个token 总量是100亿，则 10**11/2**19 = 190734
     # optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4, betas=(0.9, 0.95), eps=1e-8)
     optimizer = raw_model.configure_optimizers(weight_decay = 0.1, learning_rate = 6e-4, device = device)
 
