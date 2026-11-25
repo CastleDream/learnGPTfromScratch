@@ -600,7 +600,9 @@ class DataloaderLite:
         # 为了让不同进程之间位置错开，所以这里的初始位置状态就不是0了，而是
         # 假设B=16，T=1024，则对于rank0,就是从0开始，对于rank1，就是从16*1024开始，...
         # self.current_position = self.B * self.T * self.process_rank
+        self.reset() # 专门创建一个reset函数，除了初始化的时候使用外，在训练的训练过程中，每次都要重置val_loader
 
+    def reset(self):
         # state
         self.current_shard = 0
         self.tokens = load_tokens(self.shards[self.current_shard])
@@ -682,11 +684,13 @@ def train():
     if torch.cuda.is_available():
         torch.cuda.manual_seed(1337)
 
+    enc = tiktoken.get_encoding("gpt2")
+
     # train_loader = DataloaderLite(B=4, T=32) # 跑初始化测试用
     # GPT3中最小的模型的batch_size是 0.5m, 即50w tokens, 0.5e6/1024 = 488.28 所以需要把B改成488左右
     # 尝试使用梯度累积技术 Gradient Accumulation
     total_batch_size = 524288   # 2**18=262144  2**19=524288 所以选择这个，而不是无法被2多次整除的 50 0000
-    B = 16     # 如果开启了DDP，则每个进程的数据也都是 B,T这样的train_loader,但是梯度累积上有变化，需要把进程数考虑进去
+    B = 64     # 如果开启了DDP，则每个进程的数据也都是 B,T这样的train_loader,但是梯度累积上有变化，需要把进程数考虑进去
     T = 1024
     assert total_batch_size % (B * T * ddp_world_size)==0,"make sure total_batch_size is divisible by B * T * ddp_world_size"
     grad_accum_steps = total_batch_size//(B * T * ddp_world_size)   
@@ -705,7 +709,7 @@ def train():
 
     # 调整数据加载器使其可以识别对应的ddp_rank和进程总数 ddp_world_size
     train_loader = DataloaderLite(B=B, T=T, process_rank = ddp_rank, num_processes = ddp_world_size, split='train')  # 实际运行对应的参数
-
+    val_loader = DataloaderLite(B=B, T=T, process_rank = ddp_rank, num_processes = ddp_world_size, split='val') 
     torch.set_float32_matmul_precision("high") # 开始TF32的matmul精度模式，只有A100/`Ampere`之后的架构才可以开启这个特性
 
     # 由于上面设置了随机数，所以8个进程创建的模型是完全一模一样的
@@ -723,8 +727,11 @@ def train():
 
     max_lr = 6e-4       # 由于下面会用schedule来调整lr，因此优化器里设置的lr其实并不发挥作用
     min_lr = max_lr*0.1
-    warmup_steps = 715 
-    max_steps = 19073   # 每个训练步处理 2**19 = 524288个token 总量是100亿，则 10**11/2**19 = 190734
+    warmup_steps = 715   # gpt3论文 前375m的token预热， 375*10**6 / 2**19 = 715 所以预热步数就是 715  直接这样写也可以：375e6/2**19
+    # 但是这里的预热步数写的有点温和了，其实100步都完全够了
+    max_steps = 19073    # 注意，这里没有epoch的概念。。。
+    # total_batch_size = 524288 每个训练步处理 2**19 = 524288个token 
+    # 总量是10B(100亿 = 10**2 * 10**8 = 10**10)，则 10**10/2**19 = 19073.4 所以一个epoch需要19073个step
     # optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4, betas=(0.9, 0.95), eps=1e-8)
     optimizer = raw_model.configure_optimizers(weight_decay = 0.1, learning_rate = 6e-4, device = device)
 
@@ -736,13 +743,89 @@ def train():
     # https://github.com/pytorch/pytorch/blob/v2.15.0/torch/nn/parallel/distributed.py#L1680
     for step in range(max_steps):
         t0 = time.time()
+        # 注意，一般算val_loss是为了和train_loss对比判断有没有过拟合，但是由于数据很多，基本不会重复，所以通常预期val_loss和train_loss会基本保持一致
+        # 也可以尝试直接用 OpenAI发布的gpt2的权重初始化，来看一下这个模型的泛化能力如何
+        # 如果增加epoch，而不是现在的1个epoch的话，则数据就开始重复，就可能就会过拟合了，即val_loss和train_loss就不会一致了
+
+        # 每100steps评估一次，第0个steps也会评估
+        if step % 100==0:
+            val_loader.reset()
+            with torch.no_grad():
+                val_loss_accum = 0
+                val_loss_steps = 20
+                for _ in range(val_loss_steps):
+                    x, y = val_loader.next_batch()
+                    x, y = x.to(device), y = y.to(device)
+                    with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                        logits = model(x)  
+                        loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
+                        val_loss_accum+=loss.detach()
+                    val_loss_accum/=val_loss_steps
+                    # loss = loss/val_loss_steps
+                    # val_loss_accum+=loss.detach()
+                    # 这部分看着有点违和，应该是在从train的带有梯度累积的那块赋值过来懒得改了
+                    # loss = loss/grad_accum_steps  
+                    # loss_accum+=loss.detach()
+                    # 实际上这里目的还是为了求平均， 
+                    # 即: val_loss = (step1_loss/20)+  (step2_loss/20) + .. +  (step19_loss/20) = (step1_loss + step2_loss + .. + step19_loss)/20
+                    # 这里懒得改的结果就是会多执行19次除法操作
+                    # 无效的“浮点数精度防御”：在累加极多次（比如几万次）时，为了防止“大数吃小数”（Float32 精度有限，累加到后期微小的增量会被忽略），有人会采用“先缩小再累加”的策略。
+                    # 但 这里只有 20 次循环，Float32 的精度（约 7 位有效数字）完全足够容纳 20 个 loss 值的累加，根本不存在精度丢失的问题。
+            if ddp:
+                dist.all_reduce(val_loss_accum, op=dist.ReduceOp.AVG)
+            if master_process:
+                print(f"validation loss: {val_loss_accum.item():.4f}")
+        
+        # 除了评估val_loss之外，也会评估一下推理情况
+        # once in a while generate from the model (except step 0, which is noise)
+        # disabled because torch.compile throws a scary error i can't solve rn
+        # if you disable torch.compile, this code works fine
+        # 这部分其实就是从 code\gpt2\10_gpt.ipynb ##对照py脚本 这部分直接复制的
+        # 由于如果model是torch.compile过的会报错，因此，这里这部分采样推理的代码先暂时不执行
+        # 报错的原因在于：torch.compile 默认对 Tensor 的 Shape 是静态假设的，while 循环引入了动态 Shape（Dynamic Shape） 
+        # xgen的shape一直在改变 xgen = torch.cat((xgen, xcol), dim = 1) Dynamo 记录 Guard：xgen.shape == (B, 5) 随着操作执行 Dynamo 检查 Guard，发现 Shape 不匹配，Guard 失效。
+        # 导致Dynamo 被迫在后台重新 Trace 并重新编译（Recompile）一个新的计算图。随着 while 循环执行，xgen 的长度从 5 增加到 32，每次循环都会触发一次重编译。
+        # PyTorch 为了防止这种无限重编译导致程序卡死，设置了默认的重编译次数上限（通常是 8 次）。当 xgen 的长度变化超过这个阈值时，TorchDynamo 会直接抛出异常
+        # torch._dynamo.exc.InternalError: recompilation limit exceeded 或者 torch._dynamo.exc.Unsupported: data-dependent guard / dynamic shape not supported
+        if step > 0 and step % 100 == 0 and False:
+            model.eval() 
+            num_return_sequences = 4
+            max_length = 32
+            tokens = enc.encode("Hello, I'm a language model,")
+            tokens = torch.tensor(tokens, dtype=torch.long)
+            tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
+            # Returns a new tensor with a dimension of size one inserted at the specified position. 插入一个轴，作为batch
+            xgen = tokens.to(device)
+            sample_rng = torch.Generator(device=device) 
+            # rng是 Random Number Generator的简写
+            # 注意，以前看到Generator是在 code\4_MLP2_makemore.ipynb 是用在 变量初始化来假装是线性层权重
+            # g = torch.Generator().manual_seed(2147483647) 
+            # C  = torch.randn((vocab_size, n_embd), generator=g)
+            # 添加这个 sample_rng就可以直接控制随机数的采样过程，同时不会影响训练时使用的那个默认的全局生成器
+            sample_rng.manual_seed(42+ddp_rank)  
+            # ddp环境下，每个ddp进程都要执行这段命令，所以设置每个卡/模型随机数不一样，这样生成的结果也不一样
+            while xgen.size(1)<max_length:
+                with torch.no_grad():
+                    logits = model(xgen)    # (B,T,vocab_size)
+                    logits = logits[:,-1,:] # (B, 最后一个token的预测结果，vocab_size)
+                    probs = F.softmax(logits)
+                    topk_probs, topk_indices = torch.topk(probs, k = 50, dim = -1)
+                    ix = torch.multinomial(topk_probs, 1, generator= sample_rng) # (B,1)
+                    xcol = torch.gather(topk_indices, dim = -1, index = ix)
+                    xgen = torch.cat((xgen, xcol), dim = 1) # (B,T,vocab_size)
+            for i in range(num_return_sequences):
+                tokens = xgen[i, :max_length].tolist()
+                decoded = enc.decode(tokens)
+                print(f"rank {ddp_rank} sample {i}: {decoded}")
+
+        # 训练部分
+        model.train()  # 从model.eval()改为train()状态
         optimizer.zero_grad()
         loss_accum = 0.0
         # 改为Gradient Accumulation来用有限的显存模拟大批量batch训练
         for micro_step in range(grad_accum_steps):
             x,y = train_loader.next_batch()  # 这里没有在DataloaderLite的init里把所有文本都放到gpu里，而是后面调用的时候一批一批的放，主要是为了节约gpu
-            x = x.to(device)
-            y = y.to(device)
+            x, y = x.to(device), y = y.to(device)
         
             with torch.autocast(device_type=device, dtype=torch.bfloat16):
                 logits = model(x)  
@@ -783,6 +866,7 @@ def train():
     """
 
 # python code/gpt2/train_gpt2.py
+# torchrun --standalone --nproc_per_node=8 code/gpt2/train_gpt2.py
 if __name__ == "__main__":
     # 1. 测试模型结构是否正确，是否可以正确加载gpt-2权重
     # model = GPT2.from_pretrained("gpt2")
@@ -852,3 +936,6 @@ if __name__ == "__main__":
 # H20-3e BF16  148TFLOPS	 (百度百科 H20 H20，是英伟达为遵守美国出口限制而推出，专为中国市场设计的AI加速器 是个阉割版的GPU)
 # https://flopper.io/gpu/nvidia-h20-141gb
 # 所以A100的BF16计算速度差不读是H20-3e的2倍，所以老师的结果比这个差不多也是2倍
+
+
+# 老师实际对 10B的数据运行 19073 steps，需要的时间是 19073 * 0.33s(330ms) /60/60 = 1.74 h 1h40min左右，所以其实8 A100卡，10B的数据只需要2h就可以，感觉还可以接受 
