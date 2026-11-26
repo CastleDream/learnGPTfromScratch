@@ -47,8 +47,6 @@ from torch.nn import functional as F
 import math
 import time
 
-
-master_process = True
 # @dataclass 自动生成类中那些重复的“样板代码”（Boilerplate code），让你用最简洁的方式定义数据结构
 # 会在类创建时，自动根据你定义的类属性（带有类型注解的变量），自动生成 __init__、__repr__ 和 __eq__ 方法。 代码量减少了 80% 以上，而且不易出错。
 @dataclass
@@ -595,6 +593,14 @@ class DataloaderLite:
         assert len(shards)>0, f"no shards found for split {split}"
         if master_process:
             print(f"found {len(shards)} shards for split {split}")
+        # 这里 master_process虽然提示黄色，但是执行并不会报错，因为python的作用域与延迟执行机制
+        # 在 Python 中，函数或类方法的定义（def）只是将代码块编译并绑定到名称上，并不会立即执行方法体内的代码。
+        # 变量的查找遵循 LEGB 规则（Local -> Enclosing -> Global -> Built-in）。
+        # 代码的执行过程如下：
+        # 类定义阶段：Python 解析 class DataloaderLite 及其内部的方法时，只是记录了方法的结构，并不会去检查 master_process 是否存在。
+        # 全局变量初始化阶段：代码继续向下执行，通过判断 ddp 环境变量，在`全局作用域`中明确赋值了 master_process = ddp_rank == 0 或 master_process = True。
+        # 方法调用阶段：直到脚本底部执行到 train_loader = DataloaderLite(B=B, T=T, process_rank = ddp_rank, num_processes = ddp_world_size, split='train') 时，才会真正进入该方法内部。
+        # 此时，Python 在局部作用域找不到 master_process，会向上查找到全局作用域，而该变量此时已经定义完毕，因此可以正常获取，不会抛出 NameError。
 
         # state
         # 为了让不同进程之间位置错开，所以这里的初始位置状态就不是0了，而是
