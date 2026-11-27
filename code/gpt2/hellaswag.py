@@ -18,11 +18,18 @@ gpt2 (124M)
 - eleuther harness reports acc 28.92%, acc_norm 31.14% (multiple choice style)
 - this script: 10042 acc: 0.2859 acc_norm: 0.2955 (completion style)
 
+我自己跑的结果(差不多, 可能是windows和linux的运行差异吧):
+10042 acc_norm: 2968/10042=0.2956
+注意: 随机猜测的准确率时25%, 所以原始的gpt2和随机猜测的效果差不多~
+
 gpt2-xl (1558M)
 - eleuther harness reports acc 40.04%, acc_norm 50.89% (multiple choice style)
 - this script: 10042 acc: 0.3842 acc_norm: 0.4893 (completion style)
 
 The validation set of HellaSwag has a total of 10,042 examples.
+
+name	train	validation	test
+default	39905	10042	10003
 """
 
 import os
@@ -33,13 +40,14 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from transformers import GPT2LMHeadModel
+
 
 # 老师写这个脚本的时候，可能还没有上传到Huggingface上，
 # <https://huggingface.co/datasets/Rowan/hellaswag/tree/main/data>
 # 不过老师给的github链接现在已经失效了，所以现在要换成用Huggingface的dataset来下载读取数据集了
 
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+from transformers import GPT2LMHeadModel
 DATA_CACHE_DIR = os.path.join(os.path.dirname(__file__), "hellaswag")
 os.makedirs(DATA_CACHE_DIR, exist_ok=True)
 import os
@@ -64,7 +72,11 @@ def render_example(example):
     enc = tiktoken.get_encoding("gpt2")
 
     ctx = example["ctx"]
-    label = example["label"]
+    label = int(example["label"]) 
+    # 注意，用dataset加载的这个数据 label在huggingface上显示的数据类型是string，所以这里要变成整数
+    # 不然下面在计算判断正确时 num_correct_norm += int(pred_norm == label)
+    # In [2]: 2=='2'
+    # Out[2]: False
     endings = example["endings"]
 
     # data needed to reproduce this eval on the C size
@@ -104,7 +116,7 @@ def render_example(example):
 def evaluate(model_type, device):
 
     torch.set_float32_matmul_precision('high') # use tf32
-    model = GPT2LMHeadModel.from_pretrained(model_type)
+    model = GPT2LMHeadModel.from_pretrained(model_type, cache_dir = DATA_CACHE_DIR)  # 可以从Huggingface里加载现有的gpt2来测试一下
     model.to(device)
     # model = torch.compile(model) # optionally torch compile the model
 
@@ -113,8 +125,8 @@ def evaluate(model_type, device):
     num_total = 0
 
     dataset = load_dataset("Rowan/hellaswag", split="validation", cache_dir = DATA_CACHE_DIR)
-    for sample in dataset:
-        data, tokens, mask, label = render_example(sample)
+    for example in dataset:
+        data, tokens, mask, label = render_example(example)
         tokens = tokens.to(device)
         mask = mask.to(device)
 
@@ -136,22 +148,74 @@ def evaluate(model_type, device):
         # flat_shift_tokens (4*(T-1))
         shift_losses = F.cross_entropy(flat_shift_logits, flat_shift_tokens, reduction='none')  # input:(N,C)  target:(N)
         # https://docs.pytorch.org/docs/2.15/generated/torch.nn.CrossEntropyLoss.html#torch.nn.CrossEntropyLoss
-        #  reduction='none'的时候，返回的损失就是 (B/N)
+        #  reduction='none'的时候，返回的损失的shape就是 (B/N) batch_size
+        # 设置 reduction='none' 时，返回的 loss tensor 的 shape 与 target（标签）的 shape 完全一致。
         shift_losses = shift_losses.view(tokens.size(0), -1)
+        # 这里又把 shift_losses从flaten(4*(T-1))状态变成 (4, T-1)的batch形状了
 
         # now get the average loss just for the completion region (where mask == 1), in each row
         # 只对mask有效的部分计算平均损失
-        shift_mask = (mask[..., 1:]).contiguous() # we must shift mask, so we start at the last prompt token
+        shift_mask = (mask[..., 1:]).contiguous()  # shift_mask.shape(4, T-1)
+        # 这里 mask[..., 1:] 是为了和 shift_tokens 对齐
+
+        # 对齐之后，之后乘法，shift_losses对应的shift_mask里是0的地方也就变成0了，只保留了shift_losses对应的shift_mask里是1的地方
         masked_shift_losses = shift_losses * shift_mask
         # sum and divide by the number of 1s in the mask
-        sum_loss = masked_shift_losses.sum(dim=1)
-        avg_loss = sum_loss / shift_mask.sum(dim=1)
+        sum_loss = masked_shift_losses.sum(dim=1)    # 不考虑reponse长度的损失，即：没有归一化的结果
+        avg_loss = sum_loss / shift_mask.sum(dim=1)  # 考虑了response长度的损失，即：归一化之后的结果（对batch中的每个样本求和，即求1的个数）
         # now we have a loss for each of the 4 completions
         # the one with the lowest loss should be the most likely
-        pred = sum_loss.argmin().item()
+        # 损失最低的就是可能性最高的，就是选择的答案
+        # 注意，这里虽然是batch=4,但是这4个样本是同一个问题的四个答案，所以其实只对应最后一个true label(ABCD序号)
+
+        # 下面其实只使用了归一化之后的结果，所以这个没有归一化的可以不看了
+        # pred = sum_loss.argmin().item()
         pred_norm = avg_loss.argmin().item()
 
-# python code/gpt2/hellaswag.py
-if __name__ == "__main__":
-    loaded_data = load_hellaswag_splits()
+        # accumulate stats 计算统计结果
+        num_total += 1
+        # num_correct += int(pred == label)
+        num_correct_norm += int(pred_norm == label)
+        print(f"{num_total} acc_norm: {num_correct_norm}/{num_total}={num_correct_norm/num_total:.4f}")
 
+        # debug: pretty print a few examples, and the losses in each case
+        # 打印前10个样本，看看效果
+        if num_total < 10:
+            print("---")
+            print(f"Context:\n {example['ctx']}")
+            print(f"Endings:")
+            for i, end in enumerate(example["endings"]):
+                print(f"{i} (loss: {avg_loss[i].item():.4f}) {end}")
+            print(f"predicted: {pred_norm}, actual: {label}")
+ 
+
+def get_most_likely_row(tokens, mask, logits):
+    """
+    """
+    shift_logits = (logits[..., :-1, :]).contiguous()   
+    shift_tokens = (tokens[..., 1:]).contiguous() 
+
+    flat_shift_logits = shift_logits.view(-1, shift_logits.size(-1)) 
+    flat_shift_tokens = shift_tokens.view(-1) 
+
+    shift_losses = F.cross_entropy(flat_shift_logits, flat_shift_tokens, reduction='none') 
+    shift_losses = shift_losses.view(tokens.size(0), -1)
+
+    shift_mask = (mask[..., 1:]).contiguous()
+    masked_shift_losses = shift_losses * shift_mask
+
+    sum_loss = masked_shift_losses.sum(dim=1)
+    avg_loss = sum_loss / shift_mask.sum(dim=1)  
+    pred_norm = avg_loss.argmin().item()
+    return pred_norm
+
+# python code/gpt2/hellaswag.py 
+# 默认gpt-2的显存消耗是 2.3G/8G  毕竟只有124MB，又不是 641B的1B对1GB显存
+if __name__ == "__main__":
+    # loaded_data = load_hellaswag_splits()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-m", "--model_type", type=str, default="gpt2", help="the model type to use")
+    parser.add_argument("-d", "--device", type=str, default="cuda", help="the device to use")
+    args = parser.parse_args()
+    evaluate(args.model_type, args.device)

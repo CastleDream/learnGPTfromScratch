@@ -40,12 +40,18 @@ lm_head.weight torch.Size([50257, 768])
 import os
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com" # 设置 HuggingFace 官方推荐的国内镜像源 (hf-mirror)
 os.environ["HF_HOME"] = "E:/learnGPT/learnGPTfromScratch/other"  # 如果需要指定本地缓存路径（建议大模型单独指定目录，避免占满系统盘）
+# DATA_CACHE_DIR = os.path.join(os.path.dirname(__file__), "hellaswag")
+DATA_CACHE_DIR = "code/gpt2/hellaswag"
+
+import os
+from datasets import load_dataset, Dataset
 from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import math
 import time
+from hellaswag import render_example, get_most_likely_row
 
 # @dataclass 自动生成类中那些重复的“样板代码”（Boilerplate code），让你用最简洁的方式定义数据结构
 # 会在类创建时，自动根据你定义的类属性（带有类型注解的变量），自动生成 __init__、__repr__ 和 __eq__ 方法。 代码量减少了 80% 以上，而且不易出错。
@@ -721,7 +727,9 @@ def train():
     # 由于上面设置了随机数，所以8个进程创建的模型是完全一模一样的
     model = GPT2(GPT2Config(vocab_size= 50304)) # 直接用默认的gpt-2的配置来初始化一个模型，修改其中的odd的超参，加快计算速度，改为偶数even
     model.to(device)  
-    # model = torch.compile(model)  # torch.compile是pytorch2.0的新特性，主要是为了加速模型的训练和推理，类似于tensorflow的XLA编译器
+    use_compile = False # 由于编译过的模型在推理和HellaSwag评测的时候会报错，因此，这里默认不进行编译
+    if use_compile:
+        model = torch.compile(model)  # torch.compile是pytorch2.0的新特性，主要是为了加速模型的训练和推理，类似于tensorflow的XLA编译器
     # import code; code.interact(local=locals())
     # 需要将模型封装到ddp中,但是前向传播过程中，模型不需要有任何改动，DDP的实现也是和常规的前向是一致的，但是反向则不同
     # 每个独立的gpu都会有自己这部分数据产生的所有参数的梯度，
@@ -741,6 +749,13 @@ def train():
     # optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4, betas=(0.9, 0.95), eps=1e-8)
     optimizer = raw_model.configure_optimizers(weight_decay = 0.1, learning_rate = 6e-4, device = device)
 
+    # 创建一个日志目录，来写checkpoints以及记录日志到log.txt文件中，包括训练损失，验证损失以及hellaswag准确率
+    log_dir = "log"
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, f"log.txt")
+    with open(log_file, "w") as f:
+        pass
+
     # 对于DDP的反向传播，由于这里启动了梯度累积，希望能逐步累加，而不是每次计算后都进行同步操作
     # 即：希望 micro_step 到达 grad_accum_steps-1 的时候，再去平均所有的梯度
     # 即: 所有进程自己的梯度累积操作执行完了之后，再进行进程之间的梯度allReduce操作
@@ -749,15 +764,18 @@ def train():
     # https://github.com/pytorch/pytorch/blob/v2.15.0/torch/nn/parallel/distributed.py#L1680
     for step in range(max_steps):
         t0 = time.time()
+        last_step = (step == max_steps - 1) # 判断是否到达了训练的最后一步
+           
         # 注意，一般算val_loss是为了和train_loss对比判断有没有过拟合，但是由于数据很多，基本不会重复，所以通常预期val_loss和train_loss会基本保持一致
         # 也可以尝试直接用 OpenAI发布的gpt2的权重初始化，来看一下这个模型的泛化能力如何
         # 如果增加epoch，而不是现在的1个epoch的话，则数据就开始重复，就可能就会过拟合了，即val_loss和train_loss就不会一致了
 
         # 每100steps评估一次，第0个steps也会评估
-        if step % 100==0:
+        if step % 250 == 0 or last_step:
+            model.eval()
             val_loader.reset()
             with torch.no_grad():
-                val_loss_accum = 0
+                val_loss_accum = 0.0
                 val_loss_steps = 20
                 for _ in range(val_loss_steps):
                     x, y = val_loader.next_batch()
@@ -781,7 +799,48 @@ def train():
                 dist.all_reduce(val_loss_accum, op=dist.ReduceOp.AVG)
             if master_process:
                 print(f"validation loss: {val_loss_accum.item():.4f}")
+                with open(log_file, "a") as f:
+                    f.write(f"{step} val {val_loss_accum.item():.4f}\n")
         
+        # 用hellaswag评估，由于每个样本的长度不同，因此评估期间也有动态tensor shape的问题，所以不可以用compile模型
+        # 把 hellaswag.py里的关键内容复制过来
+        if (step % 250 == 0 or last_step) and not use_compile:
+            num_correct_norm = 0
+            num_total = 0
+            dataset = load_dataset("Rowan/hellaswag", split="validation", cache_dir = DATA_CACHE_DIR)
+            for i, example in enumerate(dataset):
+                # 由于有ddp的问题，所以每个ddp进程只推理一部分样本， 
+                # 比如: 
+                # ddp_rank 0 就只看 0, 8,16
+                # ddp_rank 1 就只看 1, 9,17 ...
+                if i % ddp_world_size !=ddp_rank:
+                    continue
+
+                _, tokens, mask, label = render_example(example)
+                tokens = tokens.to(device)  # ddp的情况里，判断过 device = f"cuda:{ddp_local_rank}"
+                mask = mask.to(device)
+                with torch.no_grad():
+                    with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                        logits = model(x)  
+                    pred_norm = get_most_likely_row(tokens, mask, logits)
+                num_total+=1
+                num_correct_norm += int(pred_norm == label)
+            # reduce the stats across all processes
+            if ddp:
+                num_total = torch.tensor(num_total, dtype=torch.long, device=device)
+                num_correct_norm = torch.tensor(num_correct_norm, dtype=torch.long, device=device)
+                dist.all_reduce(num_total, op = dist.ReduceOp.SUM)
+                dist.all_reduce(num_correct_norm, op = dist.ReduceOp.SUM)
+                num_total = num_total.item()
+                num_correct_norm = num_correct_norm.item()
+            acc_norm = num_correct_norm / num_total
+            if master_process:
+                print(f"HellaSwag accuracy: {num_correct_norm}/{num_total}={acc_norm:.4f}")
+                with open(log_file, "a") as f:
+                    f.write(f"{step} hella {acc_norm:.4f}\n")                
+                        
+
+
         # 除了评估val_loss之外，也会评估一下推理情况
         # once in a while generate from the model (except step 0, which is noise)
         # disabled because torch.compile throws a scary error i can't solve rn
@@ -793,7 +852,7 @@ def train():
         # 导致Dynamo 被迫在后台重新 Trace 并重新编译（Recompile）一个新的计算图。随着 while 循环执行，xgen 的长度从 5 增加到 32，每次循环都会触发一次重编译。
         # PyTorch 为了防止这种无限重编译导致程序卡死，设置了默认的重编译次数上限（通常是 8 次）。当 xgen 的长度变化超过这个阈值时，TorchDynamo 会直接抛出异常
         # torch._dynamo.exc.InternalError: recompilation limit exceeded 或者 torch._dynamo.exc.Unsupported: data-dependent guard / dynamic shape not supported
-        if step > 0 and step % 100 == 0 and False:
+        if (step % 250 == 0 or last_step) and not use_compile:
             model.eval() 
             num_return_sequences = 4
             max_length = 32
@@ -861,7 +920,9 @@ def train():
         tokens_per_sec = tokens_processed / (t1 - t0) # 每秒处理的token数量 tokens per second throughout
         if master_process:
             print(f"step {step:4d} | loss: {loss_accum.item():.6f} |  lr: {lr:.4f} |norm: {norm:.4f} | dt: {dt:.2f}ms | tokens/sec: {tokens_per_sec:.2f}")
-    
+            with open(log_file, "a") as f:
+                f.write(f"{step} train {loss_accum.item():.6f}\n")
+
     # 训练结束之后，要释放掉资源，不然会warning
     if ddp:
         destroy_process_group()
