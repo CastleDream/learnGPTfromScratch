@@ -74,7 +74,7 @@
 |P7: 从零开始，用代码构建 GPT|2026.8.6~ 9.1|- nn.Embedding层随机初始化<br/>- optimizer.zero_grad(set_to_none = True),优化器设置梯度为0或者None的区别<br/>- 自注意力机制中的数学技巧(不同时间步求均值改为矩阵乘法, 为什么B批次维度会放在第一位, 多维矩阵计算)<br/>- **自注意力机制key,query的合理性(符合语言模型的本质)**<br/>- **自注意力机制value的合理性**(有向图中节点间的信息传递机制)<br/>- 自注意力机制和位置嵌入<br/>- 缩放注意力机制的合理性, **kq乘法方差计算目的**<br/>- pytorch的`forward函数`和python的`__call__()`的区别<br/> - (md文档中)register_buffer() vs register_parameter<br/>- (md文档中)**相同输出维度，多头效果优于单头**<br/>- (md文档中) transformer的残差连接 <br/>- **LayerNorm实现，BatchNorm和LayerNorm就差个dim**|
 |P8: GPT现状(BRK216HFS)| 2026.9.2~9.24|大会发言，记录见[md/8_GPT现状BRK216HFS.md](./md/8_GPT现状BRK216HFS.md)
 |P9: 构建 GPT 分词器|2026.9.28~10.20|- (md文档中)为什么使用字节而不是Unicode码点作为BPE算法的输入<br/>- (md文档中)英语和非英语的语义/token压缩率的差异<br/>- bytes函数的作用<br/>- (md文档中)gpt2的regex pattern模式匹配详解 以及 jupyter中 `### 基于正则匹配的预分词` 部分的内容|
-|P10: 复现 GPT-2 (124M 参数)|
+|P10: 复现 GPT-2 (124M 参数)| 2026.10.21 ~ 11.28| 见`10_复现 GPT-2.md`文档和`code/gpt2`中的脚本注释
 
 
 ## 3. 涉及的论文

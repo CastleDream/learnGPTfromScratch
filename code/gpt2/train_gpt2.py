@@ -102,7 +102,7 @@ class CasualSelfAttention(nn.Module):
 
         # 这里命名为bias，但是本质是mask的作用，只是为了和openai/hf的实现保持一致
         # self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size)).view(1,1,config.block_size, config.block_size))
-        self.register_buffer("bias", torch.tril(torch.ones(1, 1, config.block_size, config.block_size)))
+        # self.register_buffer("bias", torch.tril(torch.ones(1, 1, config.block_size, config.block_size)))
         # torch.tril不是只能接受2d输入的， 
         # torch.tril 完美支持多维张量。规则：它总是把输入张量的最后两个维度视为矩阵的行和列，而将前面的所有维度视为 Batch 维度，并对每一个 Batch 独立执行下三角操作。
 
@@ -563,6 +563,8 @@ import numpy as np
 def load_tokens(filename):
     npt = np.load(filename)
     npt = npt.astype(np.int32) # added after video
+    # Earlier version of PyTorch may have difficulty converting from uint16 to long. 
+    # add npt = npt.astype(np.int32) to use numpy to convert uint16 to int32 before converting to torch tensor and then converting to long.
     ptt = torch.tensor(npt, dtype=torch.long)
     return ptt
 
@@ -692,6 +694,10 @@ def train():
         device = detect_device()
         # 这里是非DDP的情况，所以只会有单个进程，不需要考虑多进程会导致打印print多次
 
+    # added after video, pytorch can be serious about it's device vs. device_type distinction
+    # torch.autocast(device_type: str) 第一个参数接受的不是准确的 device,而必须是 device_type,比如: cuda,cpu
+    device_type = "cuda" if device.startswith("cuda") else "cpu"
+
     torch.manual_seed(1337)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(1337)
@@ -703,7 +709,9 @@ def train():
     # 尝试使用梯度累积技术 Gradient Accumulation
     total_batch_size = 524288   # 2**18=262144  2**19=524288 所以选择这个，而不是无法被2多次整除的 50 0000
     B = 64     # 如果开启了DDP，则每个进程的数据也都是 B,T这样的train_loader,但是梯度累积上有变化，需要把进程数考虑进去
-    T = 1024
+    T = 1024   
+    # 如果要完全遵循gpt3的参数,这里序列长度/上下文窗口要改成2048
+    # 同时,为了保证每一步的处理的tokens数一致 依然是50w左右,B也需要对应修改为32
     assert total_batch_size % (B * T * ddp_world_size)==0,"make sure total_batch_size is divisible by B * T * ddp_world_size"
     grad_accum_steps = total_batch_size//(B * T * ddp_world_size)   
     # 按照这种批次要累计的步数 2**19/(16*1024) = 2**19/(2**4 * 2**10) = 2**5 = 32  当前优化的结果是90ms一个，则32个需要大约3分钟左右
@@ -740,10 +748,13 @@ def train():
     raw_model = model.module if ddp else model
 
     max_lr = 6e-4       # 由于下面会用schedule来调整lr，因此优化器里设置的lr其实并不发挥作用
+    # 这里的max_lr设置的很保守,可以直接放大三倍,这样训练的更快~,可以多试试,预训练的超参有很大的优化空间
     min_lr = max_lr*0.1
     warmup_steps = 715   # gpt3论文 前375m的token预热， 375*10**6 / 2**19 = 715 所以预热步数就是 715  直接这样写也可以：375e6/2**19
     # 但是这里的预热步数写的有点温和了，其实100步都完全够了
-    max_steps = 19073    # 注意，这里没有epoch的概念。。。
+    max_steps = 19073    
+    # 注意，这里没有epoch的概念。。。 19073刚好是训练完10B数据的步数
+    # 可以19073*4训练4个epoch,刚好8小时一晚上,看看效果会不会有所提高
     # total_batch_size = 524288 每个训练步处理 2**19 = 524288个token 
     # 总量是10B(100亿 = 10**2 * 10**8 = 10**10)，则 10**10/2**19 = 19073.4 所以一个epoch需要19073个step
     # optimizer = torch.optim.AdamW(model.parameters(), lr = 3e-4, betas=(0.9, 0.95), eps=1e-8)
@@ -780,7 +791,7 @@ def train():
                 for _ in range(val_loss_steps):
                     x, y = val_loader.next_batch()
                     x, y = x.to(device), y = y.to(device)
-                    with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                    with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
                         logits = model(x)  
                         loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
                         val_loss_accum+=loss.detach()
@@ -801,6 +812,20 @@ def train():
                 print(f"validation loss: {val_loss_accum.item():.4f}")
                 with open(log_file, "a") as f:
                     f.write(f"{step} val {val_loss_accum.item():.4f}\n")
+                # 保存检查点
+                # 这里只是为了避免重复写一次  if master_process:,其实放在评估的循环外面完全ok
+                if step > 0 and (step % 5000 == 0 or last_step):
+                    # optionally write model checkpoints
+                    checkpoint_path = os.path.join(log_dir, f"model_{step:05d}.pt")
+                    checkpoint = {
+                        'model': raw_model.state_dict(),
+                        'config': raw_model.config,
+                        'step': step,
+                        'val_loss': val_loss_accum.item()
+                    }
+                    # you might also want to add optimizer.state_dict() and
+                    # rng seeds etc., if you wanted to more exactly resume training
+                    torch.save(checkpoint, checkpoint_path)
         
         # 用hellaswag评估，由于每个样本的长度不同，因此评估期间也有动态tensor shape的问题，所以不可以用compile模型
         # 把 hellaswag.py里的关键内容复制过来
@@ -820,7 +845,7 @@ def train():
                 tokens = tokens.to(device)  # ddp的情况里，判断过 device = f"cuda:{ddp_local_rank}"
                 mask = mask.to(device)
                 with torch.no_grad():
-                    with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                    with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
                         logits = model(x)  
                     pred_norm = get_most_likely_row(tokens, mask, logits)
                 num_total+=1
@@ -891,15 +916,16 @@ def train():
         for micro_step in range(grad_accum_steps):
             x,y = train_loader.next_batch()  # 这里没有在DataloaderLite的init里把所有文本都放到gpu里，而是后面调用的时候一批一批的放，主要是为了节约gpu
             x, y = x.to(device), y = y.to(device)
-        
-            with torch.autocast(device_type=device, dtype=torch.bfloat16):
+            if ddp:
+                model.require_backward_grad_sync = (micro_step == grad_accum_steps-1)
+                # 即：只在梯度累积的最后一步把require_backward_grad_sync变为True(执行梯度同步)，其余都是False(不执行梯度同步) 
+                # 视频后备注: 但是这个变量实际上在前向和反向的时候都用了,所以要提前    
+                # 以前这部分在 loss_accum+=loss.detach()和 loss.backward() 之间
+            with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
                 logits = model(x)  
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1))
             loss = loss/grad_accum_steps   # 这步也会算在loss的梯度里面
             loss_accum+=loss.detach()
-            if ddp:
-                model.require_backward_grad_sync = (micro_step == grad_accum_steps-1)
-                # 即：只在梯度累积的最后一步把require_backward_grad_sync变为True(执行梯度同步)，其余都是False(不执行梯度同步) 
             loss.backward() 
         import torch.distributed as dist
         if ddp:
